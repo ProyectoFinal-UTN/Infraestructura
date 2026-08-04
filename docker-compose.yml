@@ -1,0 +1,22 @@
+services:
+  nginx:
+    build: ./nginx
+    ports:
+      - "80:80"
+    depends_on:
+      - frontend
+      - backend
+
+  frontend:
+    build:
+      context: ../Frontend
+    expose:
+      - "80"
+
+  backend:
+    build:
+      context: ../Backend
+    expose:
+      - "4000"
+    env_file:
+      - ../Backend/.env
