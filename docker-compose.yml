@@ -22,8 +22,8 @@ services:
       - ../Backend/.env
     # Pisa los valores del .env local, que apuntan al desarrollo sin Docker
     # (Vite en :5173, backend en :4000). Dentro del stack todo entra por Nginx
-    # en http://localhost, asi que Better Auth tiene que verlo asi o rechaza
-    # el origen de las peticiones. Va DESPUES de env_file para que gane.
+    # en http://localhost, así que Better Auth tiene que verlo así o rechaza
+    # el origen de las peticiones. `environment` pisa `env_file`; se deja debajo por legibilidad.
     environment:
       BETTER_AUTH_URL: http://localhost
       TRUSTED_ORIGINS: http://localhost
