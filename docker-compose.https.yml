@@ -1,0 +1,25 @@
+# Override OPT-IN para probar HTTPS local (necesario para que un celular
+# real pueda acceder a la camara, ver README). No reemplaza a
+# docker-compose.yml, se suma:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.https.yml up --build
+#
+# El uso normal del dia a dia (`docker compose up --build`, sin este
+# archivo) sigue funcionando exactamente igual que antes, sin necesitar
+# ningun certificado.
+services:
+  nginx:
+    ports:
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.https.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+
+  backend:
+    environment:
+      # HTTPS_LOCAL_ORIGIN: la URL con la que el celular accede, ej.
+      # https://192.168.1.23 (la IP de LAN de la PC, la que mkcert usó para
+      # generar el cert). Se define en un `.env` local de este repo
+      # (gitignored) o inline al correr el comando.
+      BETTER_AUTH_URL: ${HTTPS_LOCAL_ORIGIN:-https://localhost}
+      TRUSTED_ORIGINS: http://localhost,${HTTPS_LOCAL_ORIGIN:-https://localhost}

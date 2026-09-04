@@ -47,14 +47,72 @@ Para reconstruir un solo servicio después de un cambio (por ejemplo, tras un pu
 docker compose up --build backend
 ```
 
+## HTTPS local (para probar la cámara desde el celular — HU-10)
+
+Los navegadores bloquean el acceso a la cámara (`getUserMedia`) fuera de un "contexto seguro": HTTPS, con la única excepción de `http://localhost`. Eso alcanza para probar en la misma PC, pero **no** para un celular real conectándose por la IP de LAN de la PC (ej. `http://192.168.1.23`) — ahí el navegador bloquea la cámara aunque el resto de la app funcione bien.
+
+`docker compose up --build` (sin nada más) sigue funcionando exactamente igual que siempre, solo en HTTP — este paso es **opcional**, hace falta únicamente para probar el escaneo de código de barras en un celular.
+
+1. Instalar `mkcert` una vez por PC (`choco install mkcert` en Windows, `brew install mkcert` en Mac) y correr `mkcert -install` para confiar el CA raíz local.
+2. Averiguar la IP de LAN de la PC (`ipconfig` en Windows, `ifconfig`/`ip a` en Mac/Linux — buscar la IP de la red Wi-Fi, ej. `192.168.1.23`).
+3. Generar el certificado para esa IP, dentro de este repo:
+   ```bash
+   mkdir certs
+   mkcert -cert-file certs/cert.pem -key-file certs/key.pem <IP-LAN> localhost 127.0.0.1
+   ```
+   `certs/` está en `.gitignore` — el cert es local a cada developer/red, nunca se commitea.
+4. (Opcional pero recomendado) crear un `.env` en este repo con la misma IP, para que Better Auth acepte el origin:
+   ```
+   HTTPS_LOCAL_ORIGIN=https://<IP-LAN>
+   ```
+5. Levantar el stack con el override de HTTPS sumado al de siempre:
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.https.yml up --build
+   ```
+6. Confiar el CA raíz de mkcert en el celular — es un paso único por dispositivo. Hay que transferirle el archivo `rootCA.pem` (mkcert indica su ubicación con `mkcert -CAROOT`) e instalarlo como perfil de confianza:
+   - **Mac**: AirDrop directo al celular.
+   - **Windows** (sin AirDrop): la forma más simple es copiarlo dentro del contenedor de `frontend`, que ya sirve HTTP en el puerto 80 sin necesitar certificado — `curl` desde el celular no hace falta, alcanza con Safari:
+     ```bash
+     docker cp "$(mkcert -CAROOT)/rootCA.pem" infraestructura-frontend-1:/usr/share/nginx/html/rootCA.pem
+     ```
+     Después, desde el celular, en Safari: `http://<IP-LAN>/rootCA.pem` → "Permitir" para descargar el perfil → Ajustes → tocar el banner "Perfil descargado" (o Ajustes > General > VPN y administración de dispositivos) → **Instalar** (pide el código de bloqueo) → confirmar el aviso de "Perfil no verificado" con **Instalar** de nuevo → **Listo**. Ese archivo es público (no es sensible, es el certificado raíz, no la clave privada), así que no importa si queda servido un rato en HTTP plano.
+   - Con el perfil instalado, todavía falta activar la confianza total: Ajustes > General > Información > **Config. certificados de confianza**, y activar el switch de "mkcert ..." bajo "Certificados raíz de confianza completa". Sin este paso, iOS instala el certificado pero Safari lo sigue tratando como no confiable.
+7. Desde el celular, en la **misma red Wi-Fi** que la PC, entrar a `https://<IP-LAN>`.
+
+**Alternativa sin instalar nada**, si el proyecto ya tiene Vercel conectado: probar directo contra el preview URL de la PR del Frontend, que ya tiene HTTPS real de Vercel sin configurar nada acá. mkcert queda para cuando hace falta todo el stack local (Backend + Nginx incluidos), no solo el Frontend.
+
+### Si el celular no encuentra el servidor (Docker Desktop + WSL2)
+
+Con Docker Desktop sobre WSL2, es común que `http://<IP-LAN>` funcione perfecto desde la propia PC (incluso `Test-NetConnection` da OK) pero **no conteste desde otro dispositivo** — el puerto está escuchando en `0.0.0.0` y el firewall lo permite, pero WSL2 en modo NAT (el default) no reenvía bien las conexiones que llegan desde fuera de la PC. Vite no tiene este problema porque corre como proceso nativo de Windows, no a través de WSL2.
+
+Arreglo, una sola vez por PC:
+
+1. Crear (o editar) `%UserProfile%\.wslconfig` con:
+   ```ini
+   [wsl2]
+   networkingMode=mirrored
+   ```
+2. Reiniciar WSL2 desde una terminal cualquiera: `wsl --shutdown` (esto corta cualquier otra sesión de WSL2 que tengas abierta, no solo Docker).
+3. Esperar a que Docker Desktop vuelva a levantar el motor (unos segundos) y volver a correr `docker compose ... up --build`.
+
+Con eso, `com.docker.backend.exe` pasa a escuchar de forma que sí acepta conexiones entrantes desde otros dispositivos de la LAN. Confirmado funcionando con un iPhone real.
+
+**Además del firewall para mkcert/Nginx**, si vas a bajar `rootCA.pem` desde el celular (paso 6), necesitás permitir explícitamente el puerto por el que lo serví (80 y 443) si Windows no lo dejó pasar solo — en PowerShell **como administrador**:
+```powershell
+New-NetFirewallRule -DisplayName "Docker HTTP-HTTPS LAN" -Direction Inbound -Protocol TCP -LocalPort 80,443 -Action Allow -Profile Any
+```
+
 ## Estructura
 
 ```
 nginx/
-├── Dockerfile       # empaqueta Nginx con la config de este repo
-└── nginx.conf       # reglas de enrutamiento (/ , /api/, /api-docs/)
-tests/               # tests de integración/e2e (pendiente, ver más abajo)
-docker-compose.yml   # orquesta nginx + frontend + backend
+├── Dockerfile           # empaqueta Nginx con la config de este repo
+├── nginx.conf           # config por defecto, HTTP en :80
+├── nginx.https.conf     # variante opt-in con HTTPS en :443 (ver arriba)
+└── locations.conf       # reglas de enrutamiento (/ , /api/, /api-docs/), compartidas por ambas
+tests/                    # tests de integración/e2e (pendiente, ver más abajo)
+docker-compose.yml        # orquesta nginx + frontend + backend (uso normal)
+docker-compose.https.yml  # override opcional para sumar HTTPS local
 ```
 
 ## Cómo funciona el enrutamiento (Nginx)
