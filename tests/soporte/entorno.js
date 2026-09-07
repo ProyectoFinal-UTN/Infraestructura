@@ -19,7 +19,7 @@ export const PASSWORD = "unaClaveSegura123";
 export const RAMA_ESPERADA = process.env.E2E_RAMA_ESPERADA ?? "dev";
 
 const ARCHIVO_CORRIDA = fileURLToPath(
-  new URL("../../.e2e-run.json", import.meta.url),
+  new URL("../.e2e-run.json", import.meta.url),
 );
 
 /**
@@ -56,12 +56,16 @@ export function borrarCorrida() {
 /**
  * Correo de un comercio de prueba.
  *
- * El sufijo va al final a proposito: el teardown borra con
+ * El prefijo no nombra ninguna HU: los comercios los crea el mismo fixture para
+ * todas las suites, y no hay uno por historia. Lo que los identifica es el
+ * sufijo de la corrida.
+ *
+ * Ese sufijo va al final a proposito: el teardown borra con
  * `LIKE '%-<sufijo>@test.local'`, el mismo patron que usa el `afterAll` de
  * Backend/tests/productos.test.js.
  */
 export function correoDePrueba(etiqueta, sufijo) {
-  return `test-hu9-e2e-${etiqueta}-${sufijo}@test.local`;
+  return `test-e2e-${etiqueta}-${sufijo}@test.local`;
 }
 
 /** Patron SQL de los correos creados por esta corrida. */

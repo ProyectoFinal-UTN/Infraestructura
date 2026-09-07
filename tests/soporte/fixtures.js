@@ -19,7 +19,7 @@ import { BASE_URL, PASSWORD, correoDePrueba, leerCorrida } from "./entorno.js";
  * `autoSignIn`, asi que el sign-up ya deja la sesion iniciada, y el hook
  * `user.create.after` del backend crea organization + member (rol
  * `propietario`) + comercio solo. Pasar por el formulario de registro ataria
- * estos tests a una pantalla que no es la de HU-9.
+ * todas las suites a una pantalla que ninguna de ellas viene a probar.
  */
 
 let contadorComercios = 0;
@@ -56,7 +56,8 @@ export const test = base.extend({
 
   /**
    * Hace que `context` y `page` arranquen con la sesion del comercio del test:
-   * se entra directo a /productos, sin pasar por el login.
+   * se entra directo a la pantalla que el test quiere probar, sin pasar por el
+   * login.
    */
   storageState: async ({ comercio }, use) => {
     await use(comercio.storageState);

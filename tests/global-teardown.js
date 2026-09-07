@@ -6,7 +6,7 @@ import {
   borrarCorrida,
   leerCorrida,
   patronDeCorreo,
-} from "./e2e/soporte/entorno.js";
+} from "./soporte/entorno.js";
 
 /**
  * Borra de la base todo lo que creo esta corrida.
