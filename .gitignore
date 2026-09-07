@@ -2,6 +2,15 @@ node_modules/
 *.log
 graphify-out/
 
+# Salida de Playwright: traces y screenshots de los tests que fallaron
+# (test-results/), el reporte HTML que abre `npm run test:e2e:report`
+# (playwright-report/) y el sufijo de la corrida en curso, que el global-setup
+# escribe para que los workers y el teardown lo compartan (.e2e-run.json). Los
+# tres se generan solos en cada corrida.
+test-results/
+playwright-report/
+tests/.e2e-run.json
+
 # Certs de mkcert para probar HTTPS local (ver README) y el .env opcional
 # que define HTTPS_LOCAL_ORIGIN para docker-compose.https.yml. Se generan
 # por developer/red, nunca se commitean.
