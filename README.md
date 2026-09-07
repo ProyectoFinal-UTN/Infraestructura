@@ -125,11 +125,66 @@ docker-compose.https.yml  # override opcional para sumar HTTPS local
 
 Los contenedores `frontend` y `backend` **no están expuestos directamente** al exterior — solo son alcanzables entre sí dentro de la red interna de Docker Compose. Nginx es el único punto de entrada público.
 
-## Tests de integración (pendiente)
+## Tests E2E
 
-Este repo es donde van a vivir los tests que necesitan **todo el stack levantado** para tener sentido (a diferencia de los tests unitarios, que viven en `Backend`/`Frontend` cada uno por su lado). Se van a agregar cuando se defina el framework (candidato: Playwright, para simular el flujo real de un usuario contra `http://localhost`).
+Acá viven los tests que necesitan **todo el stack levantado** para tener sentido: simulan a un usuario real contra `http://localhost`, con el build de producción del Frontend servido por Nginx hablando con el Backend y con la base real. El framework es **Playwright**.
 
-Hasta entonces, `tests/` se mantiene vacía como placeholder de la carpeta.
+Es una capa distinta de las otras dos, no un reemplazo:
+
+| Nivel | Dónde vive | Runner |
+|---|---|---|
+| Unitario de componentes | `Frontend/src/**/*.test.jsx` | Vitest |
+| Unitario de lógica | `Backend/tests/*.service.test.js` | Jest |
+| Integración de API (sin UI) | `Backend/tests/*.test.js` | Jest + supertest |
+| **E2E sobre el stack completo** | **`Infraestructura/tests/e2e/`** | **Playwright** |
+
+Los tests de acá cubren **flujos de usuario por la interfaz**. No repiten las validaciones, los códigos de estado ni el multi-tenant que ya cubren los tests de integración del Backend: la API se usa como andamiaje (armar el escenario de un test) y para verificar lo que la pantalla no muestra.
+
+### Correrlos
+
+Requisito previo: **el stack tiene que estar levantado**, y `Backend` y `Frontend` tienen que estar en la rama que se quiere probar (normalmente `dev`, que es lo que exige el chequeo previo). `docker-compose.yml` construye con `context: ../Backend` y `../Frontend`, así que la imagen sale de lo que esté checkouteado en la carpeta hermana — el checkout es lo único que define contra qué código se testea.
+
+```bash
+git -C ../Backend  checkout dev && git -C ../Backend  pull origin dev
+git -C ../Frontend checkout dev && git -C ../Frontend pull origin dev
+docker compose up --build          # dejar corriendo en otra terminal
+```
+
+Y en este repo, una vez por máquina:
+
+```bash
+npm install
+npx playwright install chromium
+```
+
+Después:
+
+```bash
+npm run test:e2e            # corre todo
+npm run test:e2e:ui         # modo interactivo, para depurar
+npm run test:e2e:headed     # con el navegador a la vista
+npm run test:e2e:report     # abre el reporte HTML de la última corrida
+```
+
+Antes de correr nada, `tests/global-setup.js` verifica dos cosas y aborta con un mensaje claro si alguna falla: que `Backend` y `Frontend` estén en `dev` (una feature branch olvidada daría una corrida verde que no prueba lo que dice probar), y que el stack responda en `http://localhost/health` — esto último suple el `healthcheck` pendiente del que habla el Troubleshooting.
+
+Variables de entorno opcionales:
+
+| Variable | Para qué |
+|---|---|
+| `E2E_CHANNEL=chrome` | Usa el Chrome (o `msedge`) ya instalado en vez del Chromium de Playwright. Sirve cuando bajar esos 200 MB no es viable, con la salvedad de que se testea contra una versión del navegador que no controlamos. |
+| `E2E_RAMA_ESPERADA` | Cambia la rama que se exige en `Backend`/`Frontend`. Por defecto `dev`. |
+| `E2E_BASE_URL` | Apunta la suite a otra URL. Por defecto `http://localhost`. |
+
+Los workers están fijados en 2: el cuello de botella no es la CPU sino Neon, que es remota y compartida, y por encima de eso las consultas de sesión empiezan a cortar por timeout.
+
+### Datos de prueba
+
+Cada test registra **su propio comercio** (`test-hu9-e2e-...@test.local`), así que arranca con el catálogo vacío y no puede pisar lo que hizo otro: los tests corren sueltos, en cualquier orden y en paralelo. Al terminar la corrida, `tests/global-teardown.js` borra de la base todo lo que se creó, identificándolo por el sufijo de esa corrida —el mismo criterio que el `afterAll` de `Backend/tests/productos.test.js`— usando la `DATABASE_URL` de `../Backend/.env`.
+
+### Cobertura actual
+
+- `tests/e2e/productos.spec.js` — HU-9 (SCRUM-21 / SCRUM-91): alta con datos válidos, rechazo de datos incompletos o inválidos, edición, y baja lógica con confirmación previa.
 
 ## Flujo de trabajo con Git
 
