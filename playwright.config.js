@@ -1,11 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * Tests E2E del stack completo (HU-9 / SCRUM-91).
+ * Tests del stack completo.
  *
  * Corren contra `http://localhost`, que es Nginx: los contenedores `frontend` y
  * `backend` usan `expose` y no `ports`, asi que no son alcanzables desde el
- * host. Es a proposito — el E2E entra por la misma puerta que un usuario.
+ * host. Es a proposito — se entra por la misma puerta que un usuario.
  *
  * No hay `webServer`: el stack se levanta a mano con `docker compose up
  * --build` (ver README). Meter un `--build` de varios minutos adentro del
@@ -14,7 +14,7 @@ import { defineConfig, devices } from "@playwright/test";
  * Backend/Frontend esten en `dev` antes de correr nada.
  */
 export default defineConfig({
-  testDir: "./tests/e2e",
+  testDir: "./tests",
   globalSetup: "./tests/global-setup.js",
   globalTeardown: "./tests/global-teardown.js",
 
@@ -23,11 +23,15 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
   // Un reintento, no para tapar tests inestables sino por una falla concreta y
-  // ajena: cada tanto la consulta de sesion contra Neon corta por ETIMEDOUT,
-  // Better Auth responde 500 y la ruta protegida lo interpreta como "no hay
-  // sesion" y manda al login. El test cae por algo que no tiene que ver con lo
-  // que prueba. Playwright igual lo marca como "flaky" en el reporte, asi que
-  // el ruido queda a la vista en vez de desaparecer.
+  // ajena: cada tanto una consulta contra Neon corta por ETIMEDOUT. Sale de dos
+  // formas, y conviene reconocer las dos porque parecen problemas distintos:
+  // si la que corta es la de sesion, Better Auth responde 500 y la ruta
+  // protegida lo lee como "no hay sesion" y manda al login; si corta cualquier
+  // otra, Nginx devuelve un 502 en la llamada a la API. En los dos casos el
+  // test cae por algo que no tiene que ver con lo que prueba, y el backend
+  // sigue arriba (se confirma con `docker inspect` — RestartCount no sube).
+  // Playwright igual lo marca como "flaky" en el reporte, asi que el ruido
+  // queda a la vista en vez de desaparecer.
   retries: 1,
 
   // El limite no es la CPU sino Neon: la base es remota y compartida, y por
@@ -56,7 +60,9 @@ export default defineConfig({
 
   projects: [
     {
+      // Lo que recorre un usuario por la interfaz.
       name: "chromium",
+      testDir: "./tests/e2e",
       use: {
         ...devices["Desktop Chrome"],
         // Por defecto se usa el Chromium que baja `npx playwright install`,
@@ -66,6 +72,14 @@ export default defineConfig({
         // testea contra una version de Chrome que no controlamos.
         ...(process.env.E2E_CHANNEL ? { channel: process.env.E2E_CHANNEL } : {}),
       },
+    },
+    {
+      // Lo que no se ve por pantalla y hay que verificar contra la API y la
+      // base: hoy, que la transaccion de HU-13 no deje el stock a medias. Sin
+      // `devices` y sin nada que use `page`, asi que no levanta navegador —
+      // Playwright solo lo arranca cuando un test pide el fixture.
+      name: "api",
+      testDir: "./tests/api",
     },
   ],
 });

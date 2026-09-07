@@ -1,6 +1,6 @@
-import { expect, test } from "./soporte/fixtures.js";
+import { expect, test } from "../soporte/fixtures.js";
+import { crearProductoViaApi, productoValido } from "../soporte/datos.js";
 import { Catalogo } from "./soporte/catalogo.js";
-import { crearProductoViaApi, productoValido } from "./soporte/datos.js";
 
 /**
  * E2E de HU-9 (SCRUM-21) — alta, validacion, edicion y baja de productos.

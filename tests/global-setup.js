@@ -1,9 +1,9 @@
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { BASE_URL, RAMA_ESPERADA, crearCorrida } from "./e2e/soporte/entorno.js";
+import { BASE_URL, RAMA_ESPERADA, crearCorrida } from "./soporte/entorno.js";
 
 /**
- * Chequeos previos a la corrida de E2E.
+ * Chequeos previos a la corrida de tests.
  *
  * 1. Que Backend y Frontend esten en `dev`. No es un detalle formal:
  *    `docker-compose.yml` construye con `context: ../Backend` y `../Frontend`,
@@ -58,7 +58,7 @@ function verificarRamas() {
 
   if (desviadas.length > 0) {
     throw new Error(
-      `Los E2E de HU-9 corren contra "${RAMA_ESPERADA}", pero ${desviadas.join(" y ")}.\n` +
+      `Los tests corren contra "${RAMA_ESPERADA}", pero ${desviadas.join(" y ")}.\n` +
         `Pone los repos en ${RAMA_ESPERADA} y reconstrui el stack:\n` +
         `  git -C ../Backend checkout ${RAMA_ESPERADA} && git -C ../Backend pull origin ${RAMA_ESPERADA}\n` +
         `  git -C ../Frontend checkout ${RAMA_ESPERADA} && git -C ../Frontend pull origin ${RAMA_ESPERADA}\n` +
@@ -98,7 +98,7 @@ async function esperarAlStack() {
 }
 
 export default async function globalSetup() {
-  console.log("\nE2E HU-9 — estado de los repos:");
+  console.log("\nEstado de los repos:");
   verificarRamas();
 
   console.log(`\nEsperando al stack en ${BASE_URL} …`);
