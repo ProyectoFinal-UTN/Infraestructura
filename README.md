@@ -110,7 +110,13 @@ nginx/
 ├── nginx.conf           # config por defecto, HTTP en :80
 ├── nginx.https.conf     # variante opt-in con HTTPS en :443 (ver arriba)
 └── locations.conf       # reglas de enrutamiento (/ , /api/, /api-docs/), compartidas por ambas
-tests/                    # tests de integración/e2e (pendiente, ver más abajo)
+tests/
+├── global-setup.js       # chequeos previos: ramas de Backend/Frontend y stack arriba
+├── global-teardown.js    # borra de la base lo que creó la corrida
+├── soporte/              # andamiaje compartido: fixtures, datos y altas por API
+├── e2e/                  # flujos de usuario por la interfaz (+ soporte/: page objects)
+└── api/                  # lo que no se ve por pantalla (+ soporte/: lectura de la base)
+playwright.config.js      # dos proyectos: `chromium` (e2e) y `api` (sin navegador)
 docker-compose.yml        # orquesta nginx + frontend + backend (uso normal)
 docker-compose.https.yml  # override opcional para sumar HTTPS local
 ```
@@ -137,8 +143,11 @@ Es una capa distinta de las otras dos, no un reemplazo:
 | Unitario de lógica | `Backend/tests/*.service.test.js` | Jest |
 | Integración de API (sin UI) | `Backend/tests/*.test.js` | Jest + supertest |
 | **E2E sobre el stack completo** | **`Infraestructura/tests/e2e/`** | **Playwright** |
+| **API sobre el stack completo** | **`Infraestructura/tests/api/`** | **Playwright** |
 
-Los tests de acá cubren **flujos de usuario por la interfaz**. No repiten las validaciones, los códigos de estado ni el multi-tenant que ya cubren los tests de integración del Backend: la API se usa como andamiaje (armar el escenario de un test) y para verificar lo que la pantalla no muestra.
+Los tests de `tests/e2e/` cubren **flujos de usuario por la interfaz**. No repiten las validaciones, los códigos de estado ni el multi-tenant que ya cubren los tests de integración del Backend: la API se usa como andamiaje (armar el escenario de un test) y para verificar lo que la pantalla no muestra.
+
+Los de `tests/api/` son la excepción, y son pocos a propósito: van ahí las propiedades que **no se ven en ninguna pantalla** y que hay que verificar contra la API y la base. Hoy es una sola, la atomicidad de HU-13. Corren en su propio proyecto de Playwright (`--project=api`), sin navegador.
 
 ### Correrlos
 
@@ -160,10 +169,14 @@ npx playwright install chromium
 Después:
 
 ```bash
-npm run test:e2e            # corre todo
+npm run test:e2e            # corre todo (los dos proyectos)
+npm run test:e2e:api        # solo los de tests/api/, sin navegador
 npm run test:e2e:ui         # modo interactivo, para depurar
 npm run test:e2e:headed     # con el navegador a la vista
 npm run test:e2e:report     # abre el reporte HTML de la última corrida
+
+npm run test:e2e -- movimientos      # filtra por ruta: acá, los dos specs de HU-13
+npm run test:e2e -- -g "merma"       # filtra por nombre de test
 ```
 
 Antes de correr nada, `tests/global-setup.js` verifica dos cosas y aborta con un mensaje claro si alguna falla: que `Backend` y `Frontend` estén en `dev` (una feature branch olvidada daría una corrida verde que no prueba lo que dice probar), y que el stack responda en `http://localhost/health` — esto último suple el `healthcheck` pendiente del que habla el Troubleshooting.
@@ -180,11 +193,19 @@ Los workers están fijados en 2: el cuello de botella no es la CPU sino Neon, qu
 
 ### Datos de prueba
 
-Cada test registra **su propio comercio** (`test-hu9-e2e-...@test.local`), así que arranca con el catálogo vacío y no puede pisar lo que hizo otro: los tests corren sueltos, en cualquier orden y en paralelo. Al terminar la corrida, `tests/global-teardown.js` borra de la base todo lo que se creó, identificándolo por el sufijo de esa corrida —el mismo criterio que el `afterAll` de `Backend/tests/productos.test.js`— usando la `DATABASE_URL` de `../Backend/.env`.
+Cada test registra **su propio comercio** (`test-e2e-...@test.local`), así que arranca con el catálogo vacío y no puede pisar lo que hizo otro: los tests corren sueltos, en cualquier orden y en paralelo. Al terminar la corrida, `tests/global-teardown.js` borra de la base todo lo que se creó, identificándolo por el sufijo de esa corrida —el mismo criterio que el `afterAll` de `Backend/tests/productos.test.js`— usando la `DATABASE_URL` de `../Backend/.env`.
+
+**Entre tests no se limpia nada, y es a propósito**: el aislamiento sale de no compartir datos, no de borrarlos. Es además lo único coherente con el modelo, porque `movimiento` es un libro append-only —no hay DELETE por diseño— y borrar filas para dejar el terreno limpio contradiría justo el invariante que HU-13 viene a probar. El orden del teardown (primero `comercio`, que se lleva todo en cascada; después el `user`) es obligatorio por el `onDelete: restrict` de `movimiento.usuario_id`.
+
+El andamiaje compartido por las dos suites vive en `tests/soporte/`: el fixture del comercio autenticado, los generadores de datos y las altas por API. Los *page objects* —los selectores de cada pantalla— quedan en `tests/e2e/soporte/`.
 
 ### Cobertura actual
 
 - `tests/e2e/productos.spec.js` — HU-9 (SCRUM-21 / SCRUM-91): alta con datos válidos, rechazo de datos incompletos o inválidos, edición, y baja lógica con confirmación previa.
+- `tests/e2e/movimientos.spec.js` — HU-13 (SCRUM-25 / SCRUM-94): un movimiento de cada tipo (compra, venta, merma y ajuste en los dos sentidos) con el stock resultante verificado contra `GET /api/productos/:id`; rechazo de la salida que dejaría el stock en negativo; el flujo en 3 pasos desde el inicio (RNF1); y el caso de ubicación —con una sola no se pide el campo, con más de una es obligatoria y el saldo cae en la elegida—.
+- `tests/api/atomicidad-movimientos.spec.js` — HU-13, criterio de rollback: que un rechazo no deje el sistema a medias. Es lo único que no se puede ver por pantalla, así que va contra la API y lee `movimiento` y `stock` directo de la base.
+
+Sobre este último, para que nadie lo lea de más: los dos guardas del backend (stock insuficiente y desborde del `integer`) corren **antes** del INSERT del movimiento, así que por HTTP no hay forma de forzar un fallo *después* de insertar. Lo que se verifica no es el `ROLLBACK` de Postgres sino su consecuencia observable —ningún rechazo deja rastro, el saldo cacheado nunca se despega del libro—, atravesando Nginx y el contenedor real. `Backend/tests/movimientos.test.js` ya prueba la lógica en proceso; acá se comprueba que la propiedad sobrevive al stack completo, que es la condición de la promoción `dev` → `main`.
 
 ## Flujo de trabajo con Git
 
