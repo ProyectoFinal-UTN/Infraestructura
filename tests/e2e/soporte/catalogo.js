@@ -96,6 +96,19 @@ export class Catalogo {
       .filter({ hasText: producto.codigoBarras });
   }
 
+  /**
+   * El link a la ficha de stock del producto (HU-11).
+   *
+   * Es un `<a>`, no un boton: lleva a `/productos/:id`. Como «Editar» y
+   * «Eliminar», su `aria-label` pisa el texto visible, asi que su nombre
+   * accesible es `Ver stock de <nombre del producto>`.
+   */
+  linkVerStock(producto) {
+    return this.page.getByRole("link", {
+      name: `Ver stock de ${producto.nombre}`,
+    });
+  }
+
   botonEditar(producto) {
     return this.page.getByRole("button", { name: `Editar ${producto.nombre}` });
   }
