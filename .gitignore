@@ -11,6 +11,11 @@ test-results/
 playwright-report/
 tests/.e2e-run.json
 
+# El .y4m que arma tests/e2e/soporte/camara-falsa.js para la cámara falsa de
+# Chromium (HU-10): se regenera en cada corrida a partir de un código de
+# barras, no hay nada que versionar.
+tests/.tmp/
+
 # Certs de mkcert para probar HTTPS local (ver README) y el .env opcional
 # que define HTTPS_LOCAL_ORIGIN para docker-compose.https.yml. Se generan
 # por developer/red, nunca se commitean.

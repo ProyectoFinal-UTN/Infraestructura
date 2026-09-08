@@ -147,7 +147,7 @@ Es una capa distinta de las otras dos, no un reemplazo:
 
 Los tests de `tests/e2e/` cubren **flujos de usuario por la interfaz**. No repiten las validaciones, los códigos de estado ni el multi-tenant que ya cubren los tests de integración del Backend: la API se usa como andamiaje (armar el escenario de un test) y para verificar lo que la pantalla no muestra.
 
-Los de `tests/api/` son la excepción, y son pocos a propósito: van ahí las propiedades que **no se ven en ninguna pantalla** y que hay que verificar contra la API y la base. Hoy es una sola, la atomicidad de HU-13. Corren en su propio proyecto de Playwright (`--project=api`), sin navegador.
+Los de `tests/api/` son la excepción, y son pocos a propósito: van ahí las propiedades que **no se ven en ninguna pantalla** y que hay que verificar contra la API o contra el enrutamiento crudo de Nginx, sin que un navegador aporte nada. Corren en su propio proyecto de Playwright (`--project=api`), sin navegador.
 
 ### Correrlos
 
@@ -201,11 +201,15 @@ El andamiaje compartido por las dos suites vive en `tests/soporte/`: el fixture 
 
 ### Cobertura actual
 
+- `tests/e2e/registro.spec.js` — HU-1: registro real por el formulario de `/registro` (no por API, a diferencia del resto de la suite), la sesión queda iniciada tras el alta, y desde ahí se navega por un link real hasta `/productos` y se ve el catálogo vacío. Es el único spec que ejercita el camino completo de un usuario que nunca tuvo sesión a través de los tres contenedores.
 - `tests/e2e/productos.spec.js` — HU-9 (SCRUM-21 / SCRUM-91): alta con datos válidos, rechazo de datos incompletos o inválidos, edición, y baja lógica con confirmación previa.
 - `tests/e2e/movimientos.spec.js` — HU-13 (SCRUM-25 / SCRUM-94): un movimiento de cada tipo (compra, venta, merma y ajuste en los dos sentidos) con el stock resultante verificado contra `GET /api/productos/:id`; rechazo de la salida que dejaría el stock en negativo; el flujo en 3 pasos desde el inicio (RNF1); y el caso de ubicación —con una sola no se pide el campo, con más de una es obligatoria y el saldo cae en la elegida—.
+- `tests/api/enrutamiento.spec.js` — enrutamiento de Nginx contra el stack real (ver `nginx/locations.conf`): `/` sirve el HTML del Frontend, `/health` devuelve el estado del Backend (además funciona como smoke test reportado, no solo como gate de `global-setup.js`), `/api/...` sin sesión devuelve 401 con el path intacto (confirma que no está el bug de la barra final en `proxy_pass` que comenta `nginx.conf`), y `/api-docs/` sirve el Swagger UI.
 - `tests/api/atomicidad-movimientos.spec.js` — HU-13, criterio de rollback: que un rechazo no deje el sistema a medias. Es lo único que no se puede ver por pantalla, así que va contra la API y lee `movimiento` y `stock` directo de la base.
 
 Sobre este último, para que nadie lo lea de más: los dos guardas del backend (stock insuficiente y desborde del `integer`) corren **antes** del INSERT del movimiento, así que por HTTP no hay forma de forzar un fallo *después* de insertar. Lo que se verifica no es el `ROLLBACK` de Postgres sino su consecuencia observable —ningún rechazo deja rastro, el saldo cacheado nunca se despega del libro—, atravesando Nginx y el contenedor real. `Backend/tests/movimientos.test.js` ya prueba la lógica en proceso; acá se comprueba que la propiedad sobrevive al stack completo, que es la condición de la promoción `dev` → `main`.
+
+- `tests/e2e/escanear.spec.js` — HU-10: escanea el código de barras de un producto ya cargado y entra a su detalle desde el resultado. Usa una cámara falsa de verdad, no un mock de `getUserMedia`: `tests/e2e/soporte/camara-falsa.js` arma un archivo Y4M con un EAN-13 válido (dígito de control incluido, si no zxing lo descarta como ilegible) y Chromium lo sirve como si fuera una webcam vía `--use-fake-device-for-media-stream` + `--use-file-for-fake-video-capture`. Así se prueba la cadena real: cámara → `@zxing/browser` decodificando frames del `<video>` → `GET /api/productos/codigo/:codigoBarras`. El escenario es el de "producto ya existe": es el único de los dos que no depende de Open Food Facts (API externa), así que no se vuelve flaky por un servicio de terceros. La sugerencia de Open Food Facts para códigos nuevos queda sin cubrir por esta suite — es un problema de datos de terceros, no del stack propio.
 
 ## Flujo de trabajo con Git
 
