@@ -147,7 +147,7 @@ Es una capa distinta de las otras dos, no un reemplazo:
 
 Los tests de `tests/e2e/` cubren **flujos de usuario por la interfaz**. No repiten las validaciones, los códigos de estado ni el multi-tenant que ya cubren los tests de integración del Backend: la API se usa como andamiaje (armar el escenario de un test) y para verificar lo que la pantalla no muestra.
 
-Los de `tests/api/` son la excepción, y son pocos a propósito: van ahí las propiedades que **no se ven en ninguna pantalla** y que hay que verificar contra la API y la base. Hoy es una sola, la atomicidad de HU-13. Corren en su propio proyecto de Playwright (`--project=api`), sin navegador.
+Los de `tests/api/` son la excepción, y son pocos a propósito: van ahí las propiedades que **no se ven en ninguna pantalla** y que hay que verificar contra la API o contra el enrutamiento crudo de Nginx, sin que un navegador aporte nada. Corren en su propio proyecto de Playwright (`--project=api`), sin navegador.
 
 ### Correrlos
 
@@ -201,11 +201,17 @@ El andamiaje compartido por las dos suites vive en `tests/soporte/`: el fixture 
 
 ### Cobertura actual
 
+- `tests/e2e/registro.spec.js` — HU-1: registro real por el formulario de `/registro` (no por API, a diferencia del resto de la suite), la sesión queda iniciada tras el alta, y desde ahí se navega por un link real hasta `/productos` y se ve el catálogo vacío. Es el único spec que ejercita el camino completo de un usuario que nunca tuvo sesión a través de los tres contenedores.
 - `tests/e2e/productos.spec.js` — HU-9 (SCRUM-21 / SCRUM-91): alta con datos válidos, rechazo de datos incompletos o inválidos, edición, y baja lógica con confirmación previa.
 - `tests/e2e/movimientos.spec.js` — HU-13 (SCRUM-25 / SCRUM-94): un movimiento de cada tipo (compra, venta, merma y ajuste en los dos sentidos) con el stock resultante verificado contra `GET /api/productos/:id`; rechazo de la salida que dejaría el stock en negativo; el flujo en 3 pasos desde el inicio (RNF1); y el caso de ubicación —con una sola no se pide el campo, con más de una es obligatoria y el saldo cae en la elegida—.
+- `tests/api/enrutamiento.spec.js` — enrutamiento de Nginx contra el stack real (ver `nginx/locations.conf`): `/` sirve el HTML del Frontend, `/health` devuelve el estado del Backend (además funciona como smoke test reportado, no solo como gate de `global-setup.js`), `/api/...` sin sesión devuelve 401 con el path intacto (confirma que no está el bug de la barra final en `proxy_pass` que comenta `nginx.conf`), y `/api-docs/` sirve el Swagger UI.
 - `tests/api/atomicidad-movimientos.spec.js` — HU-13, criterio de rollback: que un rechazo no deje el sistema a medias. Es lo único que no se puede ver por pantalla, así que va contra la API y lee `movimiento` y `stock` directo de la base.
 
 Sobre este último, para que nadie lo lea de más: los dos guardas del backend (stock insuficiente y desborde del `integer`) corren **antes** del INSERT del movimiento, así que por HTTP no hay forma de forzar un fallo *después* de insertar. Lo que se verifica no es el `ROLLBACK` de Postgres sino su consecuencia observable —ningún rechazo deja rastro, el saldo cacheado nunca se despega del libro—, atravesando Nginx y el contenedor real. `Backend/tests/movimientos.test.js` ya prueba la lógica en proceso; acá se comprueba que la propiedad sobrevive al stack completo, que es la condición de la promoción `dev` → `main`.
+
+### Próximo paso pendiente (fuera de esta suite)
+
+Automatizar el escaneo de código de barras (HU-10, `EscanearProducto`) con `getUserMedia` simulado — es viable con los flags de Chromium para un fake video device (`--use-fake-device-for-media-stream`, `--use-file-for-fake-video-capture`), pero es un problema aparte y más grande que el resto de esta suite: no está implementado.
 
 ## Flujo de trabajo con Git
 
