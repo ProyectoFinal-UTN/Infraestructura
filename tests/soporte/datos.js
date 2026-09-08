@@ -91,6 +91,25 @@ export async function crearUbicacionViaApi(api, nombre) {
   return respuesta.json();
 }
 
+/**
+ * Borra una ubicacion (HU-8) por la API.
+ *
+ * Lo usa el unico test que necesita un comercio *sin* ninguna ubicacion, que
+ * es un estado al que no se llega de otra forma: el alta de un producto crea
+ * la "Principal" sola. Solo funciona sobre una ubicacion sin movimientos —
+ * `movimiento.ubicacion_id` es `onDelete: "restrict"` y el backend lo traduce
+ * a un 409—, asi que el producto que la deja libre tiene que haberse creado
+ * con stock inicial 0.
+ */
+export async function eliminarUbicacionViaApi(api, ubicacionId) {
+  const respuesta = await api.delete(`/api/ubicaciones/${ubicacionId}`);
+
+  expect(
+    respuesta.status(),
+    `No se pudo eliminar la ubicación ${ubicacionId}: ${await respuesta.text()}`,
+  ).toBe(204);
+}
+
 /** Las ubicaciones del comercio, para chequear precondiciones de un test. */
 export async function leerUbicaciones(api) {
   const respuesta = await api.get("/api/ubicaciones");
