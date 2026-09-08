@@ -209,9 +209,7 @@ El andamiaje compartido por las dos suites vive en `tests/soporte/`: el fixture 
 
 Sobre este último, para que nadie lo lea de más: los dos guardas del backend (stock insuficiente y desborde del `integer`) corren **antes** del INSERT del movimiento, así que por HTTP no hay forma de forzar un fallo *después* de insertar. Lo que se verifica no es el `ROLLBACK` de Postgres sino su consecuencia observable —ningún rechazo deja rastro, el saldo cacheado nunca se despega del libro—, atravesando Nginx y el contenedor real. `Backend/tests/movimientos.test.js` ya prueba la lógica en proceso; acá se comprueba que la propiedad sobrevive al stack completo, que es la condición de la promoción `dev` → `main`.
 
-### Próximo paso pendiente (fuera de esta suite)
-
-Automatizar el escaneo de código de barras (HU-10, `EscanearProducto`) con `getUserMedia` simulado — es viable con los flags de Chromium para un fake video device (`--use-fake-device-for-media-stream`, `--use-file-for-fake-video-capture`), pero es un problema aparte y más grande que el resto de esta suite: no está implementado.
+- `tests/e2e/escanear.spec.js` — HU-10: escanea el código de barras de un producto ya cargado y entra a su detalle desde el resultado. Usa una cámara falsa de verdad, no un mock de `getUserMedia`: `tests/e2e/soporte/camara-falsa.js` arma un archivo Y4M con un EAN-13 válido (dígito de control incluido, si no zxing lo descarta como ilegible) y Chromium lo sirve como si fuera una webcam vía `--use-fake-device-for-media-stream` + `--use-file-for-fake-video-capture`. Así se prueba la cadena real: cámara → `@zxing/browser` decodificando frames del `<video>` → `GET /api/productos/codigo/:codigoBarras`. El escenario es el de "producto ya existe": es el único de los dos que no depende de Open Food Facts (API externa), así que no se vuelve flaky por un servicio de terceros. La sugerencia de Open Food Facts para códigos nuevos queda sin cubrir por esta suite — es un problema de datos de terceros, no del stack propio.
 
 ## Flujo de trabajo con Git
 
