@@ -7,9 +7,12 @@ import { expect } from "@playwright/test";
  * `data-testid`, asi que todo se ubica por rol, etiqueta y texto. Las trampas
  * propias de esta pantalla:
  *
- * - El formulario de ajuste **no tiene `aria-label`**, asi que no expone
- *   `role="form"` y no se puede buscar como en las otras dos pantallas. El
- *   ancla de todo es el `<li>` de la ubicacion.
+ * - El ancla de todo es el `<li>` de la ubicacion, y no el formulario. Desde
+ *   el PR #18 de Frontend el `<form>` si tiene `aria-label` («Ajustar stock en
+ *   <ubicacion>»), asi que ya expone `role="form"` con un nombre distinto por
+ *   fila; pero el `<li>` sigue siendo el ancla correcta porque contiene cosas
+ *   que quedan fuera del formulario: la cantidad de la fila y el error que
+ *   devuelve el backend.
  * - Los campos se repiten una vez por fila: hay tantos «Cantidad» y «Sentido»
  *   como ubicaciones tenga el comercio. Ninguna busqueda puede salir de la
  *   pagina; todas se acotan a la fila.
