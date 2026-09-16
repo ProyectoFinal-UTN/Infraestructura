@@ -1,0 +1,8 @@
+nombre,codigo_barras,categoria,unidad_medida,umbral_minimo,stock_actual
+Arroz Gallo Oro 1kg,7790387012345,Almacén,kg,5,20
+Aceite Natura 900ml,7790387012352,Almacén,unidad,4,15
+Arroz Gallo Oro 1kg (cargado dos veces),7790387012345,Almacén,kg,5,20
+Azúcar Ledesma 1kg,7790387012369,Almacén,kg,6,18
+Yerba La Merced 500g,7790387099999,Almacén,paquete,3,10
+Sal Celusal 500g,7790387012376,,paquete,2,10
+Harina Pureza 1kg,7790387012383,Almacén,kg,8,25
