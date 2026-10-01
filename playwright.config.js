@@ -75,9 +75,12 @@ export default defineConfig({
     },
     {
       // Lo que no se ve por pantalla y hay que verificar contra la API y la
-      // base: hoy, que la transaccion de HU-13 no deje el stock a medias. Sin
-      // `devices` y sin nada que use `page`, asi que no levanta navegador —
-      // Playwright solo lo arranca cuando un test pide el fixture.
+      // base: que la transaccion de HU-13 no deje el stock a medias, que el
+      // contrato de la importacion de HU-7 rechace el archivo entero cuando
+      // corresponde, el enrutamiento de Nginx, y que dos transferencias cruzadas
+      // de HU-12 no se pisen. Sin `devices` y sin nada que use `page`, asi que no
+      // levanta navegador — Playwright solo lo arranca cuando un test pide el
+      // fixture.
       name: "api",
       testDir: "./tests/api",
     },
