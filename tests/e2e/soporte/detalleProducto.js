@@ -110,9 +110,10 @@ export class DetalleProducto {
    * se entera, que es lo correcto.
    *
    * Los campos son opcionales para poder mandar el formulario incompleto a
-   * proposito y ver la validacion.
+   * proposito y ver la validacion. El motivo tambien: aunque desde HU-15 todo
+   * ajuste lo exige, omitirlo es justamente uno de los casos a probar.
    */
-  async ajustar(nombreUbicacion, { cantidad, sentido } = {}) {
+  async ajustar(nombreUbicacion, { cantidad, sentido, motivo } = {}) {
     const fila = this.fila(nombreUbicacion);
 
     if (cantidad !== undefined) {
@@ -120,6 +121,9 @@ export class DetalleProducto {
     }
     if (sentido !== undefined) {
       await fila.getByLabel("Sentido", { exact: true }).selectOption(sentido);
+    }
+    if (motivo !== undefined) {
+      await this.campoMotivo(nombreUbicacion).fill(motivo);
     }
 
     await this.botonAjustar(nombreUbicacion).click();
@@ -148,6 +152,11 @@ export class DetalleProducto {
   /** El campo «Sentido» de una fila, para verificar que se limpio. */
   campoSentido(nombreUbicacion) {
     return this.fila(nombreUbicacion).getByLabel("Sentido", { exact: true });
+  }
+
+  /** El campo «Motivo» de una fila (HU-15), para verificar que se limpio. */
+  campoMotivo(nombreUbicacion) {
+    return this.fila(nombreUbicacion).getByLabel("Motivo", { exact: true });
   }
 
   /**
