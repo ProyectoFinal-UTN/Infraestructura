@@ -1,4 +1,5 @@
 import { expect } from "@playwright/test";
+import { contarPosteos } from "./red.js";
 
 /**
  * Page object del detalle de stock de un producto (`/productos/:id`, HU-11).
@@ -183,18 +184,10 @@ export class DetalleProducto {
  *
  * Devuelve el array vivo, igual que `registrarNavegaciones` en
  * `movimientos.js`: se lee despues de ejercitar el flujo.
+ *
+ * El cuerpo vive en `red.js` desde que la transferencia (HU-12) necesito lo mismo
+ * contra otra ruta. Se mantiene el nombre para no tocar los tests que ya lo usan.
  */
 export function contarPosteosDeMovimiento(page) {
-  const posteos = [];
-
-  page.on("request", (peticion) => {
-    if (
-      peticion.method() === "POST" &&
-      new URL(peticion.url()).pathname === "/api/movimientos"
-    ) {
-      posteos.push(peticion.url());
-    }
-  });
-
-  return posteos;
+  return contarPosteos(page, "/api/movimientos");
 }

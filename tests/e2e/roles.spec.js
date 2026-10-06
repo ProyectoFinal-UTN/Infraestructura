@@ -1,7 +1,17 @@
 import { expect, test } from "../soporte/fixtures.js";
 import { Configuracion } from "./soporte/configuracion.js";
 import { Login } from "./soporte/login.js";
+import {
+  Transferencias,
+  UBICACION_POR_DEFECTO,
+} from "./soporte/transferencias.js";
 import { abrirComo, sumarMiembro } from "../soporte/equipo.js";
+import {
+  crearProductoViaApi,
+  crearUbicacionViaApi,
+  leerUbicaciones,
+  ubicacionPorNombre,
+} from "../soporte/datos.js";
 
 /**
  * E2E de HU-4 — roles y permisos, con dos personas en el mismo comercio.
@@ -134,6 +144,54 @@ test.describe("HU-4 — Roles y permisos", () => {
       ).toBeVisible();
 
       await expect(suConfiguracion.ubicaciones.moneda).toBeDisabled();
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("un empleado puede transferir stock", async ({
+    api,
+    playwright,
+    browser,
+  }) => {
+    // HU-12: los tres roles tienen `movimiento:create`, así que este chequeo solo
+    // puede ser positivo — no existe ningún rol al que el endpoint le responda 403.
+    // Lo que agrega sobre `Backend/tests/transferencias.test.js`, que ya prueba que
+    // un empleado puede transferir, es que la *pantalla* no le esconda el
+    // formulario ni se lo deje inutilizable, que es el mismo criterio que el resto
+    // de esta suite.
+    //
+    // El escenario lo arma el propietario: un empleado no tiene
+    // `ubicacion:create`, así que no podría crearse el «Depósito» que necesita para
+    // tener a dónde transferir.
+    const producto = await crearProductoViaApi(api, { stockActual: "10" });
+    const deposito = await crearUbicacionViaApi(api, "Depósito del empleado");
+    const principal = ubicacionPorNombre(
+      await leerUbicaciones(api),
+      UBICACION_POR_DEFECTO,
+    );
+
+    const empleado = await sumarMiembro(playwright, api, { rol: "empleado" });
+    const { context, page: paginaEmpleado } = await abrirComo(
+      browser,
+      empleado.storageState,
+    );
+
+    try {
+      const pantalla = new Transferencias(paginaEmpleado);
+      await pantalla.ir();
+
+      await pantalla.elegir({ producto: producto.id, origen: principal.id });
+      await pantalla.esperarDisponible(UBICACION_POR_DEFECTO);
+      await pantalla.elegir({ destino: deposito.id, cantidad: 2 });
+      await pantalla.transferir();
+
+      await expect(pantalla.confirmacion).toContainText(
+        `Ahora hay 8 unidades en ${UBICACION_POR_DEFECTO} ` +
+          "y 2 unidades en Depósito del empleado.",
+      );
+      // Ni un 403 disfrazado de error de pantalla.
+      await expect(pantalla.error).toHaveCount(0);
     } finally {
       await context.close();
     }
