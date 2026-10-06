@@ -248,6 +248,10 @@ Los dos specs de HU-15 se complementan como los de HU-7: la pantalla nunca deja 
 
 Lo que queda sin cubrir acá es la calidad de lo que redacta el modelo. Eso lo prueban los unitarios de `Backend/tests/asistente.service.test.js` contra un mock, y en vivo solo se prueba a mano, con pocas preguntas puntuales (ver `references/asistente-llm.md` en la skill del equipo). Tampoco se afirma sobre el texto exacto de la respuesta limitada: lo escribe HU-28 y va a cambiar; se afirma sobre el contrato, que la pantalla avise que la respuesta es limitada.
 
+- `tests/e2e/historial.spec.js` — HU-14: el historial de movimientos recorrido por la pantalla. Que se llegue desde el inicio y muestre el libro del más nuevo al más viejo; que cada movimiento muestre lo necesario para auditarlo —cantidad con signo y su nombre accesible de entrada o salida, ubicación, quién lo registró, código y, en las correcciones, el motivo y la marca de corrección de HU-15—; los filtros por producto, tipo, rango de fechas y ubicación (este último solo aparece con más de una), combinados entre sí; que vivan en la URL y sobrevivan a una recarga; los dos estados vacíos, que dicen cosas distintas (comercio sin movimientos y filtro sin resultados) y «Limpiar filtros»; el rango invertido, que llega por link y se avisa al lado de las fechas sin consultar; que el producto dado de baja siga apareciendo, porque esconderlo rompería la auditoría; que una transferencia se vea como sus dos patas; y la paginación de a 50, con la página en la URL. `Backend/tests/historial.test.js` ya cubre la validación de cada filtro contra la API: acá se prueba la pantalla.
+
+El page object (`tests/e2e/soporte/historial.js`) es el mismo que usa HU-32, extendido. Todo está acotado al `<main>` de la pantalla, porque la lista de movimientos es un `<ul>` sin nombre y contar `listitem` en toda la página se rompería en cuanto aparezca otra lista afuera (la del asistente, o la de una navegación lateral).
+
 ## Flujo de trabajo con Git
 
 - **`main`**: versión estable, la que se muestra en cada Sprint Review. Protegida — nadie pushea directo.
