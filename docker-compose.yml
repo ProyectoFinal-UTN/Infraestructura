@@ -27,3 +27,13 @@ services:
     environment:
       BETTER_AUTH_URL: http://localhost
       TRUSTED_ORIGINS: http://localhost
+      # Sin LLM en el stack de Docker (HU-26). El .env del Backend puede traer la
+      # key del AI Gateway, que es UNA sola para los tres integrantes con US$ 5
+      # por mes: si llegara hasta aca, cada corrida de los E2E le pegaria al
+      # modelo de verdad y gastaria credito compartido, y encima con respuestas
+      # distintas en cada corrida. Vacias, el asistente contesta en modo
+      # limitado (HU-28): deterministico, gratis, y es lo que prueban los E2E.
+      # Se pisan las dos porque el backend acepta cualquiera de los dos nombres.
+      # Para probar el asistente de verdad, `npm run dev` en Backend, sin Docker.
+      LLM_API_KEY: ""
+      AI_GATEWAY_API_KEY: ""
