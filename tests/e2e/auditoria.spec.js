@@ -134,11 +134,26 @@ test.describe("HU-5 — Auditoría de accesos y acciones", () => {
 
     try {
       const suConfiguracion = new Configuracion(paginaEmpleado);
-      await suConfiguracion.ir("auditoria");
 
-      // El backend responde 403 y la pantalla muestra ese mensaje. No se
-      // esconde la pestaña: quien no puede leerla ve por qué.
-      await expect(suConfiguracion.auditoria.error).toBeVisible();
+      // HU-32 invirtió el criterio que este test afirmaba. Antes la pestaña se
+      // mostraba y el 403 del backend explicaba por qué no se podía leer; el
+      // comentario que estaba acá decía literal «no se esconde la pestaña».
+      // Ahora sí se esconde: se filtra con `auditoria: ["read"]`, que solo
+      // tiene el propietario. El empleado no se entera de que existe.
+      //
+      // No se usa `ir("auditoria")` porque ese helper afirma que la pestaña
+      // quede seleccionada, y el punto es que no está.
+      await paginaEmpleado.goto("/configuracion?seccion=auditoria");
+      await expect(suConfiguracion.titulo).toBeVisible();
+      await expect(paginaEmpleado.getByText("Cargando datos…")).toHaveCount(0);
+
+      await expect(paginaEmpleado.getByTestId("pestana-auditoria")).toHaveCount(0);
+
+      // La URL escrita a mano cae en Perfil, sin sección a medias.
+      await expect(paginaEmpleado.getByTestId("pestana-perfil")).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
       await expect(suConfiguracion.auditoria.eventos).toHaveCount(0);
     } finally {
       await context.close();

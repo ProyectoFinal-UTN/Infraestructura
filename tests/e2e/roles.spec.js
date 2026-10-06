@@ -108,11 +108,30 @@ test.describe("HU-4 — Roles y permisos", () => {
 
     try {
       const suConfiguracion = new Configuracion(paginaEmpleado);
-      await suConfiguracion.ir("usuarios");
 
-      // El backend le responde 403 al pedir el equipo, así que la pantalla
-      // muestra ese mensaje en vez de una lista que no puede ver.
-      await expect(suConfiguracion.usuarios.error).toBeVisible();
+      // HU-32 cambió este criterio, y conviene saber qué reemplazó a qué.
+      //
+      // Antes el empleado entraba a la sección, el backend le respondía 403 al
+      // pedir el equipo y la pantalla mostraba ese mensaje: la pestaña estaba a
+      // la vista y el cartel explicaba por qué no. Ahora la pestaña no existe
+      // —se filtra con `member: ["read"]`, que el empleado no tiene—, así que
+      // no hay sección en la que mostrar un error.
+      //
+      // Por eso no se navega con `ir("usuarios")`: ese helper afirma que la
+      // pestaña quede seleccionada, y acá el punto es justamente que no está.
+      await paginaEmpleado.goto("/configuracion?seccion=usuarios");
+      await expect(suConfiguracion.titulo).toBeVisible();
+      await expect(paginaEmpleado.getByText("Cargando datos…")).toHaveCount(0);
+
+      await expect(paginaEmpleado.getByTestId("pestana-usuarios")).toHaveCount(0);
+
+      // Escribir la URL a mano no deja una pantalla rota ni una sección a
+      // medias: `activa` se resuelve contra las pestañas visibles, así que cae
+      // en Perfil.
+      await expect(paginaEmpleado.getByTestId("pestana-perfil")).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
       await expect(suConfiguracion.usuarios.correoInvitado).toHaveCount(0);
       await expect(suConfiguracion.usuarios.invitar).toHaveCount(0);
     } finally {
