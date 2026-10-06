@@ -48,6 +48,10 @@ import {
  *
  * La venta deja el saldo en 1 a proposito: `mensajeConfirmacion` tiene una rama
  * distinta para el singular, y sin este caso nunca se recorreria.
+ *
+ * La merma y los ajustes llevan motivo porque desde HU-15 es obligatorio en
+ * esos dos tipos. Lo que pasa sin el se prueba en `ajustes-mermas.spec.js`;
+ * aca el motivo es solo lo que hace falta para que el movimiento se registre.
  */
 const CASOS = [
   {
@@ -67,6 +71,7 @@ const CASOS = [
   {
     titulo: "una merma resta igual que una venta",
     tipo: "merma",
+    motivo: "Rotura en el depósito",
     stockInicial: 20,
     cantidad: 3,
     saldo: 17,
@@ -75,6 +80,7 @@ const CASOS = [
     titulo: "un ajuste de entrada suma",
     tipo: "ajuste",
     sentido: "entrada",
+    motivo: "Conteo de inventario: sobraban 4",
     stockInicial: 20,
     cantidad: 4,
     saldo: 24,
@@ -83,6 +89,7 @@ const CASOS = [
     titulo: "un ajuste de salida resta",
     tipo: "ajuste",
     sentido: "salida",
+    motivo: "Conteo de inventario: faltaban 6",
     stockInicial: 20,
     cantidad: 6,
     saldo: 14,
@@ -112,6 +119,7 @@ test.describe("HU-13 — Registro de movimiento", () => {
         producto: producto.nombre,
         tipo: caso.tipo,
         sentido: caso.sentido,
+        motivo: caso.motivo,
         cantidad: caso.cantidad,
       });
       await movimientos.registrar();
@@ -185,10 +193,13 @@ test.describe("HU-13 — Registro de movimiento", () => {
     expect(stockEn(await leerStock(api, producto.id), UBICACION_POR_DEFECTO)).toBe(0);
 
     // Con el stock ya en 0, cualquier salida se rechaza — incluido el ajuste
-    // negativo, que es una salida aunque no se llame asi.
+    // negativo, que es una salida aunque no se llame asi. Lleva motivo porque
+    // sin el el ajuste se frena antes en la validacion (HU-15) y nunca llegaria
+    // a probar el chequeo de stock, que es lo que interesa aca.
     await movimientos.completar({
       tipo: "ajuste",
       sentido: "salida",
+      motivo: "Conteo de inventario",
       cantidad: 1,
     });
     await movimientos.registrar();

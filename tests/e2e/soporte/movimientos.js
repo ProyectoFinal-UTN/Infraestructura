@@ -13,6 +13,9 @@ import { expect } from "@playwright/test";
  * - El selector de ubicacion **no existe** cuando el comercio tiene una sola
  *   (`pideUbicacion = ubicaciones.length > 1`). No esta oculto: no se renderiza.
  * - El sentido (entrada/salida) son radios y solo aparecen con el tipo `ajuste`.
+ * - El motivo (HU-15) es obligatorio en `ajuste` y `merma`, y en `compra` y
+ *   `venta` no se renderiza. Igual que la ubicacion: no esta oculto, no existe.
+ *   Cambiar el tipo a uno que no lo pide lo borra.
  * - La confirmacion es `role="status"`; el rechazo por stock y el error general
  *   comparten `role="alert"`, pero nunca conviven: `alEnviar` limpia el error
  *   antes de postear y en el 409 corta con un return.
@@ -36,6 +39,7 @@ export class Movimientos {
     this.producto = this.formulario.getByLabel("Producto", { exact: true });
     this.tipo = this.formulario.getByLabel("Tipo de movimiento");
     this.cantidad = this.formulario.getByLabel("Cantidad", { exact: true });
+    this.motivo = this.formulario.getByLabel("Motivo", { exact: true });
     this.ubicacion = this.formulario.getByLabel("Ubicación", { exact: true });
 
     this.botonRegistrar = this.formulario.getByRole("button", {
@@ -72,8 +76,12 @@ export class Movimientos {
    * conocer. El tipo, en cambio, va por `value` (`compra`, `venta`, …): es el
    * mismo string que viaja al backend, asi que si alguien cambia la etiqueta
    * comercial el test no se entera, que es lo correcto.
+   *
+   * El sentido y el motivo van despues del tipo porque es el tipo el que los
+   * hace aparecer: completarlos antes seria buscar un campo que todavia no
+   * existe.
    */
-  async completar({ producto, tipo, sentido, cantidad, ubicacion }) {
+  async completar({ producto, tipo, sentido, motivo, cantidad, ubicacion }) {
     if (producto !== undefined) {
       await this.producto.selectOption({ label: producto });
     }
@@ -82,6 +90,9 @@ export class Movimientos {
     }
     if (sentido !== undefined) {
       await this.sentido(sentido).check();
+    }
+    if (motivo !== undefined) {
+      await this.motivo.fill(motivo);
     }
     if (cantidad !== undefined) {
       await this.cantidad.fill(String(cantidad));

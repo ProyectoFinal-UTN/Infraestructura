@@ -58,11 +58,15 @@ import { UBICACION_POR_DEFECTO } from "./soporte/movimientos.js";
 /**
  * Los dos sentidos del ajuste. Es lo unico que la pantalla deja elegir: el tipo
  * siempre es `ajuste`, y el producto y la ubicacion los fija la fila.
+ *
+ * El motivo va en los dos porque desde HU-15 todo ajuste lo exige. Lo que pasa
+ * sin el se prueba en `ajustes-mermas.spec.js`.
  */
 const CASOS = [
   {
     titulo: "una entrada suma",
     sentido: "entrada",
+    motivo: "Conteo de inventario: sobraban 4",
     stockInicial: 20,
     cantidad: 4,
     saldo: 24,
@@ -70,6 +74,7 @@ const CASOS = [
   {
     titulo: "una salida resta",
     sentido: "salida",
+    motivo: "Rotura de 6 unidades",
     stockInicial: 20,
     cantidad: 6,
     saldo: 14,
@@ -137,6 +142,7 @@ test.describe("HU-11 — Stock por ubicación", () => {
       await detalle.ajustar(UBICACION_POR_DEFECTO, {
         cantidad: caso.cantidad,
         sentido: caso.sentido,
+        motivo: caso.motivo,
       });
 
       // La fila y el total se actualizan solos: la pantalla recarga el producto
@@ -157,6 +163,7 @@ test.describe("HU-11 — Stock por ubicación", () => {
       // repetido por inercia es justo el error que esto evita.
       await expect(detalle.campoCantidad(UBICACION_POR_DEFECTO)).toHaveValue("");
       await expect(detalle.campoSentido(UBICACION_POR_DEFECTO)).toHaveValue("");
+      await expect(detalle.campoMotivo(UBICACION_POR_DEFECTO)).toHaveValue("");
     });
   }
 
@@ -175,9 +182,10 @@ test.describe("HU-11 — Stock por ubicación", () => {
     // otro comportamiento.
     const posteos = contarPosteosDeMovimiento(page);
 
-    // Sin nada cargado: los dos campos son obligatorios y los dos avisan. El
+    // Sin nada cargado: los tres campos son obligatorios y los tres avisan. El
     // sentido arranca vacio a proposito («Elegí una opción»), asi que no hay
-    // forma de mandar un ajuste sin decir si suma o resta.
+    // forma de mandar un ajuste sin decir si suma o resta. El motivo es de
+    // HU-15; su caso propio esta en `ajustes-mermas.spec.js`.
     await detalle.ajustar(UBICACION_POR_DEFECTO);
 
     await expect(
@@ -186,6 +194,9 @@ test.describe("HU-11 — Stock por ubicación", () => {
     await expect(
       detalle.errorDeCampo(UBICACION_POR_DEFECTO, "sentido"),
     ).toHaveText("Indicá si el ajuste suma o resta stock.");
+    await expect(
+      detalle.errorDeCampo(UBICACION_POR_DEFECTO, "motivo"),
+    ).toHaveText("Escribí el motivo de este movimiento.");
 
     // Con el sentido ya elegido queda solo el aviso de la cantidad. Lo que se
     // escribe es «dos»: el `<input type="number">` descarta lo que no es un
@@ -224,7 +235,10 @@ test.describe("HU-11 — Stock por ubicación", () => {
     // Corregir el campo alcanza para seguir: el formulario no quedo trabado.
     // Ademas es lo que le da sentido al conteo de arriba — si los POST nunca
     // se contaran, aquel `toHaveLength(0)` pasaria sin probar nada.
-    await detalle.ajustar(UBICACION_POR_DEFECTO, { cantidad: 3 });
+    await detalle.ajustar(UBICACION_POR_DEFECTO, {
+      cantidad: 3,
+      motivo: "Conteo de inventario",
+    });
 
     await expect(detalle.cantidadEn(UBICACION_POR_DEFECTO)).toHaveText("23");
     await expect(detalle.total).toHaveText("23");
@@ -253,7 +267,11 @@ test.describe("HU-11 — Stock por ubicación", () => {
 
     // Entrada en el deposito: sube el deposito y el total, y «Principal» no se
     // entera.
-    await detalle.ajustar(deposito.nombre, { cantidad: 7, sentido: "entrada" });
+    await detalle.ajustar(deposito.nombre, {
+      cantidad: 7,
+      sentido: "entrada",
+      motivo: "Mercadería sin registrar en el depósito",
+    });
 
     await expect(detalle.cantidadEn(deposito.nombre)).toHaveText("7");
     await expect(detalle.cantidadEn(UBICACION_POR_DEFECTO)).toHaveText("12");
@@ -265,6 +283,7 @@ test.describe("HU-11 — Stock por ubicación", () => {
     await detalle.ajustar(UBICACION_POR_DEFECTO, {
       cantidad: 2,
       sentido: "salida",
+      motivo: "Rotura en el salón",
     });
 
     await expect(detalle.cantidadEn(UBICACION_POR_DEFECTO)).toHaveText("10");

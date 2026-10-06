@@ -189,10 +189,30 @@ export async function registrarMovimientoViaApi(api, datos) {
 }
 
 /**
+ * Los movimientos de un producto segun `GET /api/movimientos`, del mas
+ * reciente al mas antiguo.
+ *
+ * Es la contraprueba de HU-15: el motivo no se ve en ningun saldo, asi que la
+ * unica forma de saber que se guardo (y como) es leer el libro. Se filtra por
+ * producto para no depender de la paginacion: cada test tiene su comercio y
+ * registra un punado de movimientos, muy por debajo del limite por defecto.
+ */
+export async function leerMovimientos(api, productoId) {
+  const respuesta = await api.get(`/api/movimientos?productoId=${productoId}`);
+
+  expect(
+    respuesta.status(),
+    `No se pudo leer el historial de ${productoId}: ${await respuesta.text()}`,
+  ).toBe(200);
+
+  return (await respuesta.json()).movimientos;
+}
+
+/**
  * El stock del producto, discriminado por ubicacion y con el total (HU-11).
  *
  * Es el unico lugar donde se puede leer el saldo: el listado de productos no lo
- * muestra y `GET /api/movimientos` no existe todavia (HU-14). De aca sale la
+ * muestra y `GET /api/movimientos` (HU-14) devuelve movimientos, no saldos. De aca sale la
  * verificacion del criterio "el stock se actualiza".
  */
 export async function leerStock(api, productoId) {
