@@ -37,3 +37,21 @@ services:
       # Para probar el asistente de verdad, `npm run dev` en Backend, sin Docker.
       LLM_API_KEY: ""
       AI_GATEWAY_API_KEY: ""
+      # Piso de ventas para que el analisis de HU-27 hable de rotacion. En
+      # produccion son 3: con menos no hay con que comparar un producto contra
+      # otro y el asistente lo dice (`sin_historial`) en vez de inventar.
+      #
+      # Acá va en 1 porque cada test E2E arranca con su propio comercio vacio y
+      # tiene que fabricar el historial entero por API: con el piso en 3 harian
+      # falta tres ventas de andamiaje para llegar al mismo escenario, o sea
+      # tres viajes mas a Neon por test para no probar nada distinto.
+      #
+      # Lo que SI sigue probandose con el valor real es el piso en si: el test
+      # de `sin_historial` corre con cero ventas, que esta por debajo de
+      # cualquiera de los dos valores. El umbral exacto (3) lo cubren los
+      # unitarios de Backend/tests/asistente.recomendaciones.test.js.
+      #
+      # `RECOMENDACIONES_DIAS` NO se pisa a proposito: queda en su default de 30
+      # dias, que es la ventana de produccion y la unica que esta suite
+      # ejercita de verdad.
+      RECOMENDACIONES_VENTAS_MINIMAS: "1"
