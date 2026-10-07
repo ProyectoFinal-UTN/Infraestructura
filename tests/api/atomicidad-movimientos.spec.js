@@ -129,6 +129,11 @@ test.describe("HU-13 — Atomicidad del registro de movimiento", () => {
     // Con dos ubicaciones la ubicacion pasa a ser obligatoria, asi que todos
     // los pedidos la llevan. Se alternan aceptados y rechazados sobre las dos:
     // si un rechazo dejara rastro, el invariante de abajo lo delata.
+    //
+    // El ajuste y la merma llevan motivo porque desde HU-15 es obligatorio. En
+    // el ajuste de 4 importa especialmente: sin motivo el backend lo frena con
+    // un 400 en la validacion y nunca llega al chequeo de stock, asi que el 409
+    // que este paso viene a probar no se ejercitaria.
     const SECUENCIA = [
       { ubicacion: principal, tipo: "compra", cantidad: 30, estado: 201 },
       { ubicacion: principal, tipo: "venta", cantidad: 12, estado: 201 },
@@ -139,6 +144,7 @@ test.describe("HU-13 — Atomicidad del registro de movimiento", () => {
         ubicacion: deposito,
         tipo: "ajuste",
         sentido: "salida",
+        motivo: "Conteo de inventario",
         cantidad: 2,
         estado: 201,
       },
@@ -146,10 +152,17 @@ test.describe("HU-13 — Atomicidad del registro de movimiento", () => {
         ubicacion: deposito,
         tipo: "ajuste",
         sentido: "salida",
+        motivo: "Conteo de inventario",
         cantidad: 4,
         estado: 409,
       },
-      { ubicacion: principal, tipo: "merma", cantidad: 3, estado: 201 },
+      {
+        ubicacion: principal,
+        tipo: "merma",
+        motivo: "Rotura",
+        cantidad: 3,
+        estado: 201,
+      },
     ];
 
     for (const paso of SECUENCIA) {
@@ -159,6 +172,7 @@ test.describe("HU-13 — Atomicidad del registro de movimiento", () => {
         tipo: paso.tipo,
         cantidad: paso.cantidad,
         ...(paso.sentido ? { sentido: paso.sentido } : {}),
+        ...(paso.motivo ? { motivo: paso.motivo } : {}),
       });
 
       expect(

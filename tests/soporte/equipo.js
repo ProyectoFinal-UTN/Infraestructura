@@ -107,3 +107,63 @@ export async function abrirComo(browser, storageState) {
 
   return { context, page };
 }
+
+/** El equipo del comercio, visto por quien tenga `member:read`. */
+export async function leerMiembros(api) {
+  const respuesta = await api.get("/api/miembros");
+
+  expect(
+    respuesta.status(),
+    `No se pudo leer el equipo: ${await respuesta.text()}`,
+  ).toBe(200);
+
+  return respuesta.json();
+}
+
+/**
+ * Busca a alguien en el equipo por su correo.
+ *
+ * Hace falta porque lo que identifica a un miembro en la API y en los
+ * `data-testid` es el `member.id`, que no es el `user.id` y que `sumarMiembro`
+ * no devuelve: el alta pasa por la invitacion, no por la tabla `member`.
+ *
+ * Mismo patron que `ubicacionPorNombre` en `datos.js`: falla mostrando los
+ * correos que si estaban, que es la unica forma de que el error diga algo
+ * cuando el que no aparece es el que se acaba de crear.
+ */
+export function miembroPorCorreo(miembros, correo) {
+  const miembro = miembros.find((candidato) => candidato.correo === correo);
+
+  expect(
+    miembro,
+    `No hay ningun miembro con el correo "${correo}". Estan: ${miembros
+      .map((candidato) => `${candidato.correo} (${candidato.rol})`)
+      .join(", ")}`,
+  ).toBeTruthy();
+
+  return miembro;
+}
+
+/**
+ * Le cambia el rol a alguien desde la sesion del propietario (HU-32).
+ *
+ * Va por API y no por el `<select>` de Configuracion —como si lo hace
+ * `roles.spec.js`— porque el caso que hay que probar es el cambio de rol
+ * mientras la persona tiene OTRA pantalla abierta. Por la UI habria que
+ * navegar el propietario a Configuracion, y entonces el test ya no estaria
+ * mirando lo que le pasa a la pantalla de la otra persona.
+ *
+ * `miembroId` es el `member.id` (de `leerMiembros`), no el `user.id`.
+ */
+export async function cambiarRolViaApi(api, miembroId, rol) {
+  const respuesta = await api.put(`/api/miembros/${miembroId}/rol`, {
+    data: { rol },
+  });
+
+  expect(
+    respuesta.status(),
+    `No se pudo pasar al miembro ${miembroId} a ${rol}: ${await respuesta.text()}`,
+  ).toBe(200);
+
+  return respuesta.json();
+}

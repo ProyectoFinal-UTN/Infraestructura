@@ -123,6 +123,30 @@ export async function leerUbicaciones(api) {
 }
 
 /**
+ * Una ubicacion del comercio por su nombre, para tener su `id`.
+ *
+ * Hace falta porque los `<select>` de ubicacion se eligen por `value` —que es el
+ * id— y no por la etiqueta visible: en la pantalla de transferencia la etiqueta
+ * lleva el saldo pegado («Principal (10 unidades)») y cambia cuando vuelve la
+ * consulta de stock, asi que elegir por texto es apuntar a un blanco movil.
+ *
+ * Se falla en vez de devolver `undefined` para que el test caiga donde esta el
+ * problema —la ubicacion no se creo— y no mas adelante con un `selectOption`
+ * recibiendo `undefined`, que es un error mucho mas dificil de leer.
+ */
+export function ubicacionPorNombre(ubicaciones, nombre) {
+  const encontrada = ubicaciones.find((una) => una.nombre === nombre);
+
+  expect(
+    encontrada,
+    `No existe la ubicación «${nombre}» en el comercio. Hay: ` +
+      ubicaciones.map((una) => una.nombre).join(", "),
+  ).toBeTruthy();
+
+  return encontrada;
+}
+
+/**
  * Postea un movimiento y devuelve la respuesta cruda, sin afirmar nada.
  *
  * Es para los tests en los que el codigo de estado *es* lo que se prueba (el
@@ -134,6 +158,22 @@ export async function leerUbicaciones(api) {
  */
 export function enviarMovimiento(api, datos) {
   return api.post("/api/movimientos", { data: datos });
+}
+
+/**
+ * Postea una transferencia y devuelve la respuesta cruda (HU-12).
+ *
+ * Gemelo de `enviarMovimiento`, y por el mismo motivo: es para los tests en los
+ * que el codigo de estado *es* lo que se prueba —las dos transferencias
+ * simultaneas en sentidos opuestos, que tienen que terminar sin 500—.
+ *
+ * `cantidad` va en positivo y como numero JSON: el backend chequea
+ * `typeof cantidad === "number"` y un string da 400. El signo lo pone el backend,
+ * que arma la salida en negativo sobre el origen y la entrada en positivo sobre
+ * el destino.
+ */
+export function enviarTransferencia(api, datos) {
+  return api.post("/api/transferencias", { data: datos });
 }
 
 /** Registra un movimiento como andamiaje: exige el 201 y devuelve el cuerpo. */
@@ -149,10 +189,30 @@ export async function registrarMovimientoViaApi(api, datos) {
 }
 
 /**
+ * Los movimientos de un producto segun `GET /api/movimientos`, del mas
+ * reciente al mas antiguo.
+ *
+ * Es la contraprueba de HU-15: el motivo no se ve en ningun saldo, asi que la
+ * unica forma de saber que se guardo (y como) es leer el libro. Se filtra por
+ * producto para no depender de la paginacion: cada test tiene su comercio y
+ * registra un punado de movimientos, muy por debajo del limite por defecto.
+ */
+export async function leerMovimientos(api, productoId) {
+  const respuesta = await api.get(`/api/movimientos?productoId=${productoId}`);
+
+  expect(
+    respuesta.status(),
+    `No se pudo leer el historial de ${productoId}: ${await respuesta.text()}`,
+  ).toBe(200);
+
+  return (await respuesta.json()).movimientos;
+}
+
+/**
  * El stock del producto, discriminado por ubicacion y con el total (HU-11).
  *
  * Es el unico lugar donde se puede leer el saldo: el listado de productos no lo
- * muestra y `GET /api/movimientos` no existe todavia (HU-14). De aca sale la
+ * muestra y `GET /api/movimientos` (HU-14) devuelve movimientos, no saldos. De aca sale la
  * verificacion del criterio "el stock se actualiza".
  */
 export async function leerStock(api, productoId) {
@@ -189,4 +249,80 @@ export function stockEn(detalle, nombreUbicacion) {
   ).toBeTruthy();
 
   return fila.cantidad;
+}
+
+/**
+ * Los movimientos de tipo `transferencia` de un producto (HU-12, via HU-14).
+ *
+ * De aca sale la verificacion del criterio "la transferencia queda registrada
+ * como un par ligado": las dos patas comparten `transferenciaId`, una en
+ * negativo sobre el origen y otra en positivo sobre el destino. Leerlo por la API
+ * y no de la base alcanza porque el par *si* se ve por HTTP, a diferencia de lo
+ * que mira `tests/api/soporte/base.js`.
+ *
+ * Dos cosas del contrato de `GET /api/movimientos` que sorprenden y que este
+ * helper resuelve de una vez:
+ *
+ * - La respuesta no es un array pelado: es `{ movimientos, paginacion }`. Se
+ *   devuelve solo `movimientos`, y se afirma que la pagina no se corto, porque el
+ *   limite por defecto es 50 y un test que genere mas patas leeria de menos sin
+ *   enterarse.
+ * - Cada item **anida** la ubicacion en `ubicacion: { id, nombre }`; no hay
+ *   `ubicacionId` ni `ubicacionNombre` planos. Ojo con reusar aserciones de la
+ *   respuesta 201 del POST, que si los trae planos: son dos shapes distintos para
+ *   el mismo concepto.
+ *
+ * El orden tampoco sirve para distinguir las patas: el historial ordena por
+ * `fecha DESC, id DESC` y las dos comparten el instante, asi que el desempate es
+ * por id. Se separan por el signo de `cantidad`, nunca por indice.
+ */
+export async function leerMovimientosDeTransferencia(api, productoId) {
+  const respuesta = await api.get(
+    `/api/movimientos?tipo=transferencia&productoId=${productoId}`,
+  );
+
+  expect(
+    respuesta.status(),
+    `No se pudo leer el historial de transferencias: ${await respuesta.text()}`,
+  ).toBe(200);
+
+  const { movimientos, paginacion } = await respuesta.json();
+
+  expect(
+    movimientos.length,
+    `El historial se corto por paginacion (${paginacion.total} en total, ` +
+      `limite ${paginacion.limite}). Pedir mas con el parametro «limite».`,
+  ).toBe(paginacion.total);
+
+  return movimientos;
+}
+
+/**
+ * Las dos patas de una transferencia, separadas por el signo de la cantidad.
+ *
+ * Se afirma que son exactamente dos y que comparten `transferenciaId` antes de
+ * devolverlas: si el endpoint dejara una pata sola —lo que un doble envio o un
+ * rollback a medias produciria— el test tiene que caer aca, con el conteo a la
+ * vista, y no mas adelante en una asercion sobre un saldo.
+ */
+export function parDeTransferencia(movimientos) {
+  expect(
+    movimientos.map((uno) => uno.cantidad),
+    "una transferencia tiene que dejar exactamente dos movimientos",
+  ).toHaveLength(2);
+
+  const salida = movimientos.find((uno) => uno.cantidad < 0);
+  const entrada = movimientos.find((uno) => uno.cantidad > 0);
+
+  expect(salida, "falta la pata negativa (la salida del origen)").toBeTruthy();
+  expect(entrada, "falta la pata positiva (la entrada al destino)").toBeTruthy();
+
+  expect(
+    salida.transferenciaId,
+    "las dos patas tienen que compartir el mismo transferenciaId",
+  ).toBe(entrada.transferenciaId);
+
+  expect(salida.transferenciaId, "el transferenciaId no puede ser nulo").toBeTruthy();
+
+  return { salida, entrada };
 }
