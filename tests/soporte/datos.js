@@ -326,3 +326,25 @@ export function parDeTransferencia(movimientos) {
 
   return { salida, entrada };
 }
+
+/**
+ * Da de alta un proveedor por la API (HU-19), como andamiaje.
+ *
+ * El nombre lleva un sufijo unico: el backend no admite dos proveedores
+ * activos con el mismo nombre en un comercio (409), y algunos tests crean
+ * varios.
+ */
+export async function crearProveedorViaApi(api, datos = {}) {
+  contador += 1;
+
+  const respuesta = await api.post("/api/proveedores", {
+    data: { nombre: `Distribuidora ${Date.now() % 100000}-${contador}`, ...datos },
+  });
+
+  expect(
+    respuesta.status(),
+    `No se pudo crear el proveedor: ${await respuesta.text()}`,
+  ).toBe(201);
+
+  return respuesta.json();
+}
