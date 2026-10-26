@@ -313,7 +313,7 @@ test.describe("HU-16 — Umbral de reposición", () => {
       await catalogo.guardar(catalogo.formularioAlta);
 
       await expect(catalogo.formularioAlta).toHaveCount(0);
-      await expect(catalogo.fila(nuevo)).toContainText("avisar bajo 9");
+      await expect(catalogo.fila(nuevo)).toContainText("avisar con 9 o menos");
 
       // Se entra por «Ver stock», el camino real desde el catalogo.
       await catalogo.linkVerStock(nuevo).click();
@@ -338,7 +338,7 @@ test.describe("HU-16 — Umbral de reposición", () => {
 
       const catalogo = new Catalogo(page);
       await catalogo.ir();
-      await expect(catalogo.fila(producto)).toContainText("avisar bajo 15");
+      await expect(catalogo.fila(producto)).toContainText("avisar con 15 o menos");
 
       await catalogo.botonEditar(producto).click();
       await expect(catalogo.formularioEdicion).toBeVisible();
@@ -352,7 +352,7 @@ test.describe("HU-16 — Umbral de reposición", () => {
       await catalogo.guardar(catalogo.formularioEdicion);
 
       await expect(catalogo.formularioEdicion).toHaveCount(0);
-      await expect(catalogo.fila(producto)).toContainText("avisar bajo 4");
+      await expect(catalogo.fila(producto)).toContainText("avisar con 4 o menos");
 
       await detalle.ir();
       await expect(detalle.umbral.actual).toHaveText(BloqueUmbral.textoCon(4));
