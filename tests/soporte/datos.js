@@ -348,3 +348,24 @@ export async function crearProveedorViaApi(api, datos = {}) {
 
   return respuesta.json();
 }
+
+/** Asocia un proveedor a un producto por la API (HU-20), como andamiaje. */
+export async function asociarProveedorViaApi(api, productoId, proveedorId) {
+  const respuesta = await api.post(`/api/productos/${productoId}/proveedores`, {
+    data: { proveedorId },
+  });
+
+  expect(
+    respuesta.status(),
+    `No se pudo asociar el proveedor: ${await respuesta.text()}`,
+  ).toBe(201);
+}
+
+/** Los proveedores de un producto según la API (HU-20). */
+export async function leerProveedoresDeProducto(api, productoId) {
+  const respuesta = await api.get(`/api/productos/${productoId}/proveedores`);
+
+  expect(respuesta.status()).toBe(200);
+
+  return respuesta.json();
+}
