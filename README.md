@@ -102,6 +102,68 @@ Con eso, `com.docker.backend.exe` pasa a escuchar de forma que sí acepta conexi
 New-NetFirewallRule -DisplayName "Docker HTTP-HTTPS LAN" -Direction Inbound -Protocol TCP -LocalPort 80,443 -Action Allow -Profile Any
 ```
 
+## Notificaciones push (HU-18)
+
+Cuando un movimiento deja un producto en su umbral mínimo o por debajo (partiendo de un stock que estaba por encima), el Backend manda una notificación **Web Push** a cada dispositivo suscripto del comercio. Para firmar esos envíos usa un par de claves **VAPID**: la privada se queda en el Backend y la pública se la pide el Frontend al suscribirse (`GET /api/push/clave-publica`).
+
+Este repo **no guarda ninguna clave**. Lo único que hace es dejar pasar las del Backend (`docker-compose.yml` no las pisa, a diferencia de las del LLM; el porqué está comentado ahí) y servir el service worker `/sw.js` con `Cache-Control: no-cache` (ver `nginx/locations.conf`). Cómo se activa el interruptor y qué ve cada navegador está en el README del Frontend, sección "Probar las notificaciones push (HU-18)".
+
+### Generar las claves y dónde van
+
+```bash
+cd ../Backend
+npx web-push generate-vapid-keys
+```
+
+Las tres variables van en **`Backend/.env`** (que no se commitea), nunca en este repo:
+
+```
+VAPID_PUBLIC_KEY=<clave pública>
+VAPID_PRIVATE_KEY=<clave privada>
+VAPID_SUBJECT=mailto:<un correo del equipo>
+```
+
+`VAPID_SUBJECT` es el contacto que el servicio de push puede usar si hay un problema con los envíos: `mailto:...` o una URL `https://...`. Apple rechaza los envíos sin uno válido.
+
+**Sin claves no se rompe nada**: el Backend arranca igual, avisa por consola, no manda pushes y `GET /api/push/clave-publica` responde 503, y el Frontend muestra el interruptor deshabilitado con un aviso. Los E2E de `tests/api/push.spec.js` pasan con o sin claves.
+
+### Un par por base de datos, no por persona
+
+Cada suscripción queda atada a la clave pública con la que se creó: si después el Backend firma con otro par, el servicio de push rechaza los envíos a ese dispositivo. Por eso **todo entorno que comparte base usa el mismo par**:
+
+- **Local**: los tres usamos la misma base de Neon, así que hay **un solo par para local**. Lo genera una persona y se pasa **de a uno**, igual que el `DATABASE_URL` (nunca por el grupo). Cada uno lo carga en su `Backend/.env`. Si alguien genera un par propio, las suscripciones que crearon los demás dejan de recibirle avisos, y al revés.
+- **Render**: tiene su propia base, así que lleva **otro par, distinto del de local**.
+
+Cambiar el par de un entorno deja sin avisos a todas las suscripciones de esa base: cada dispositivo tiene que volver a activar el interruptor.
+
+### Producción (Render + Vercel)
+
+- **Render** (servicio del Backend → Environment): crear `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` y `VAPID_SUBJECT`, con el par de producción.
+- **Vercel**: no hace falta nada. El Frontend no tiene claves propias, pide la pública al Backend.
+
+Las dos plataformas sirven HTTPS por defecto, que es lo que push necesita.
+
+### HTTPS: cuándo alcanza con localhost
+
+Push y service workers solo funcionan en un "contexto seguro": HTTPS con un certificado **de confianza**, con la única excepción de `http://localhost`.
+
+- **En la misma PC**: `docker compose up --build` y entrar a `http://localhost`. Alcanza.
+- **Desde el celular**: entra por la IP de LAN, que no es localhost, así que hace falta HTTPS de verdad. `npm run dev:lan` del Frontend **no sirve** para push: su certificado es autofirmado, y aunque se acepte la advertencia, el navegador no instala un service worker con un certificado no confiable.
+
+### Probar en el celular
+
+1. Tener las claves en `Backend/.env` (las del par de local).
+2. Seguir los pasos de [HTTPS local](#https-local-para-probar-la-cámara-desde-el-celular--hu-10): generar el certificado con mkcert para la IP de la PC, cargar `HTTPS_LOCAL_ORIGIN` y levantar con el override:
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.https.yml up --build
+   ```
+3. **Confiar el CA raíz de mkcert en el celular** (paso 6 de esa sección). Para push no es opcional: con el certificado sin confiar la página puede cargar, pero el service worker no se instala.
+   - **iPhone**: instalar el perfil **y además** activar la confianza total en Ajustes → General → Información → Config. certificados de confianza.
+   - **Android**: Ajustes → Seguridad → Cifrado y credenciales → Instalar un certificado → Certificado de CA (el nombre exacto cambia según la marca).
+4. **En iPhone, instalar la app en la pantalla de inicio** (iOS 16.4 o superior): en Safari, Compartir → "Agregar a pantalla de inicio", y abrirla desde ese ícono. Como pestaña común de Safari, push no existe.
+5. Iniciar sesión, ir a Configuración → Notificaciones, activar el interruptor y aceptar el permiso.
+6. Registrar una venta que haga cruzar el umbral a un producto. Llega el aviso; al tocarlo se abre `/productos/<id>` (Nginx devuelve `index.html` para las rutas del Frontend, así que entrar directo a esa URL funciona).
+
 ## Estructura
 
 ```
@@ -109,7 +171,7 @@ nginx/
 ├── Dockerfile           # empaqueta Nginx con la config de este repo
 ├── nginx.conf           # config por defecto, HTTP en :80
 ├── nginx.https.conf     # variante opt-in con HTTPS en :443 (ver arriba)
-└── locations.conf       # reglas de enrutamiento (/ , /api/, /api-docs/), compartidas por ambas
+└── locations.conf       # reglas de enrutamiento (/ , /api/, /api-docs/, /sw.js), compartidas por ambas
 tests/
 ├── global-setup.js       # chequeos previos: ramas de Backend/Frontend y stack arriba
 ├── global-teardown.js    # borra de la base lo que creó la corrida
@@ -128,6 +190,7 @@ docker-compose.https.yml  # override opcional para sumar HTTPS local
 | `/` | contenedor `frontend` | Archivos estáticos del build de React |
 | `/api/*` | contenedor `backend` | API REST (Express) |
 | `/api-docs/*` | contenedor `backend` | Documentación Swagger |
+| `/sw.js` | contenedor `frontend` | Service worker de push (HU-18), con `Cache-Control: no-cache` y sin el fallback a `index.html` |
 
 Los contenedores `frontend` y `backend` **no están expuestos directamente** al exterior — solo son alcanzables entre sí dentro de la red interna de Docker Compose. Nginx es el único punto de entrada público.
 
@@ -265,6 +328,7 @@ Tres cosas que este spec **no afirma**, y no por omisión. El contenido de `text
 - `tests/e2e/proveedores.spec.js` — HU-19 (SCRUM-31 / SCRUM-136): el directorio de proveedores recorrido por la pantalla. Que se llegue desde la navegación; el alta con nombre, contacto, teléfono, correo, rubro y condiciones de pago, con el teléfono y el correo como links para llamar y escribir; el nombre obligatorio y el nombre repetido (409, sin distinguir mayúsculas) anclado al campo; la edición, incluido vaciar un dato para borrarlo; la baja con confirmación, donde cancelar no borra y confirmar no se lleva las compras ya registradas (la baja es lógica y el historial las sigue mostrando); «Ver compras», que abre el historial filtrado por ese proveedor; y el empleado, que consulta pero no ve ninguna acción para modificar. El aislamiento entre comercios y la validación del proveedor de un movimiento los cubre `Backend/tests/proveedores.test.js`.
 
 - `tests/e2e/productos-proveedores.spec.js` — HU-20 (SCRUM-32 / SCRUM-139): la asociación de productos a proveedores. Desde la ficha del producto se le asocian dos proveedores y se ven también desde el proveedor (su panel «Productos»); quitar un proveedor borra el vínculo pero no el proveedor. Al registrar una compra, los proveedores del producto se ofrecen primero, ninguno viene elegido de antemano y el elegido queda en el movimiento; en una venta el campo no existe. La tarjeta `reponer` del Inicio sugiere a quién pedirle, con el teléfono para llamar (es la alerta de reposición del criterio 2 hasta que exista la de HU-17). El empleado ve los proveedores del producto sin poder modificarlos. El 409 por duplicado y el aislamiento entre comercios los cubre `Backend/tests/productoProveedor.test.js`.
+- `tests/api/push.spec.js` — HU-18 (SCRUM-30): el contrato de `/api/push/suscripciones` y el aviso de reposición contra el stack real, leyendo `suscripcion_push` directo de la base. Sin sesión, las tres rutas responden 401; la clave pública responde 200 (y es una clave P-256 válida) o 503, según haya claves VAPID; suscribirse da 201 y reenviar la misma suscripción no duplica la fila; un endpoint que no es https o una suscripción sin claves da 400 y no se guarda; la baja da 204 también si no existía; si otra persona del comercio se suscribe desde el mismo navegador, la fila pasa a ser suya con las claves nuevas, y la baja del dueño anterior ya no la borra; y una venta que cruza el umbral con una suscripción a un endpoint falso se registra igual y el backend sigue en pie. Los endpoints son de `.invalid`, un dominio que nunca resuelve, así que ningún test manda un push de verdad. Pasa con y sin claves VAPID, y deja anotado en el reporte cuál de los dos modos corrió. Necesita el Backend de HU-18 (`/api/push/*`).
 
 ## Flujo de trabajo con Git
 
