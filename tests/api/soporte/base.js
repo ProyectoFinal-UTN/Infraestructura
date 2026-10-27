@@ -105,6 +105,28 @@ export const test = conComercio.extend({
 
           return rows;
         },
+
+        /**
+         * Las suscripciones push con ese endpoint (HU-18), con el correo de su
+         * dueno en vez del `usuario_id`.
+         *
+         * Devuelve un arreglo aunque el indice unico sobre `endpoint` garantice
+         * a lo sumo una fila: que no se duplique es justo lo que se prueba, y
+         * con un `rows[0]` una segunda fila pasaria desapercibida. El correo es
+         * lo que el test conoce de cada sesion (el fixture `comercio` y
+         * `sumarMiembro` lo devuelven); el `user.id` no lo devuelve ninguno.
+         */
+        async suscripcionesPush(endpoint) {
+          const { rows } = await pool.query(
+            `SELECT s.comercio_id, u.email, s.p256dh, s.auth
+               FROM suscripcion_push s
+               JOIN "user" u ON u.id = s.usuario_id
+              WHERE s.endpoint = $1`,
+            [endpoint],
+          );
+
+          return rows;
+        },
       });
 
       await pool.end();
