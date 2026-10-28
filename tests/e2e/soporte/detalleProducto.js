@@ -53,6 +53,8 @@ export class DetalleProducto {
     // El fallo de la carga de la pantalla (por ejemplo, el 404 de un producto
     // ajeno). No confundirlo con `errorDelBackend`, que es por fila.
     this.errorDeCarga = page.getByRole("alert");
+
+    this.umbral = new BloqueUmbral(page);
   }
 
   /**
@@ -179,6 +181,63 @@ export class DetalleProducto {
    */
   errorDelBackend(nombreUbicacion) {
     return this.fila(nombreUbicacion).locator("> p");
+  }
+}
+
+/**
+ * El bloque «Umbral de reposición» del detalle (HU-16), arriba del stock.
+ *
+ * Todo se busca dentro de la region y no en la pagina: el `<section>` tiene
+ * `aria-labelledby` con su titulo, asi que expone `role="region"` con ese
+ * nombre. Hace falta porque el bloque comparte pantalla con las filas de stock,
+ * y las dos cosas usan `role="alert"` para sus errores.
+ *
+ * Es el primer bloque de esta pantalla con `data-testid` (`umbral-actual`): el
+ * texto del valor tiene un `<strong>` adentro y cambia de forma entre "sin
+ * umbral" y "con umbral", asi que no hay rol ni etiqueta estable que lo ubique.
+ */
+export class BloqueUmbral {
+  static SIN_UMBRAL = "Sin umbral configurado.";
+  static CONFIRMACION = "Umbral actualizado.";
+
+  /** El texto que muestra el bloque para un umbral mayor que 0. */
+  static textoCon(umbral) {
+    return `Se considera para reponer cuando el stock total llega a ${umbral} o menos.`;
+  }
+
+  constructor(page) {
+    this.region = page.getByRole("region", { name: "Umbral de reposición" });
+
+    this.actual = this.region.getByTestId("umbral-actual");
+    this.formulario = this.region.getByRole("form", {
+      name: "Configurar umbral de reposición",
+    });
+    this.campo = this.formulario.getByLabel("Umbral mínimo");
+    this.guardar = this.formulario.getByRole("button", {
+      name: "Guardar umbral",
+    });
+
+    this.confirmacion = this.region.getByRole("status");
+
+    // El error de validacion, anclado al campo por `aria-describedby` (ver
+    // `Campo.jsx`). Se busca por id por el mismo motivo que `errorDeCampo` de
+    // las filas: asi se prueba tambien que el mensaje quedo asociado al campo.
+    this.errorDelCampo = this.region.locator("#error-umbralMinimo");
+
+    // Los dos avisos de `AvisoDeError` que este bloque puede mostrar al guardar:
+    // el 403 (sin cerrar sesion) y cualquier otro, como el 404.
+    this.avisoPermiso = this.region.getByTestId("aviso-permiso");
+    this.avisoGeneral = this.region.getByTestId("aviso-general");
+  }
+
+  /**
+   * Escribe el valor y guarda. Recibe string para poder mandar lo que una
+   * persona tipea, vacio incluido; con `fill` alcanza para "-1" y "2.5" porque
+   * son numeros validos para un `<input type="number">`.
+   */
+  async configurar(valor) {
+    await this.campo.fill(String(valor));
+    await this.guardar.click();
   }
 }
 

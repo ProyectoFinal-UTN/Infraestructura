@@ -56,7 +56,7 @@ test.describe("HU-9 — Catálogo de productos", () => {
     await expect(fila).toContainText(
       `${producto.categoria} · ${producto.codigoBarras}`,
     );
-    await expect(fila).toContainText("Se mide en kg · avisar bajo 5");
+    await expect(fila).toContainText("Se mide en kg · avisar con 5 o menos");
 
     // El stock inicial no se ve en el listado (mostrarlo es HU-11), asi que el
     // criterio se cierra contra el detalle: es el unico dato del alta que la
@@ -199,7 +199,7 @@ test.describe("HU-9 — Catálogo de productos", () => {
     await expect(fila).toContainText(
       `${editado.categoria} · ${editado.codigoBarras}`,
     );
-    await expect(fila).toContainText("Se mide en l · avisar bajo 12");
+    await expect(fila).toContainText("Se mide en l · avisar con 12 o menos");
 
     // El listado se recarga desde el servidor, asi que lo que se ve es lo que
     // quedo guardado: el nombre viejo ya no esta en ninguna fila.
