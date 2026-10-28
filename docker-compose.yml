@@ -37,6 +37,14 @@ services:
       # Para probar el asistente de verdad, `npm run dev` en Backend, sin Docker.
       LLM_API_KEY: ""
       AI_GATEWAY_API_KEY: ""
+      # Las claves VAPID de las notificaciones push (HU-18: VAPID_PUBLIC_KEY,
+      # VAPID_PRIVATE_KEY y VAPID_SUBJECT) NO se pisan a proposito: llegan tal
+      # cual desde Backend/.env por el env_file. A diferencia de la key del LLM,
+      # mandar un push no gasta credito, y dejarlas pasar es lo que permite
+      # probar avisos de verdad en el celular con docker-compose.https.yml.
+      # Si Backend/.env no las trae, el backend arranca igual, avisa por consola
+      # y no manda pushes; los E2E de tests/api/push.spec.js pasan en los dos
+      # casos. Ver "Notificaciones push (HU-18)" en el README.
       # Piso de ventas para que el analisis de HU-27 hable de rotacion. En
       # produccion son 3: con menos no hay con que comparar un producto contra
       # otro y el asistente lo dice (`sin_historial`) en vez de inventar.
