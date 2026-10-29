@@ -177,7 +177,18 @@ test.describe("HU-19 — Proveedores", () => {
     expect(historial.movimientos.map((m) => m.id)).toEqual([compra.id]);
   });
 
-  test("«Ver compras» lleva al historial filtrado por ese proveedor", async ({
+  /**
+   * El destino de este link CAMBIO con HU-21: antes iba a
+   * `/movimientos?proveedorId=...`, el historial general filtrado, que mezcla
+   * los cinco tipos de movimiento y no resume nada. Ahora va a la pantalla de
+   * compras del proveedor.
+   *
+   * Lo que a HU-19 le toca verificar es que el boton de la fila lleve a la
+   * pantalla de ESE proveedor, y nada mas. Lo que se ve al llegar —encabezado,
+   * resumen, filas, filtros— es de HU-21 y se prueba en
+   * `historial-compras-proveedor.spec.js`, que ademas entra por este mismo link.
+   */
+  test("«Ver compras» lleva al historial de compras de ese proveedor", async ({
     page,
     api,
   }) => {
@@ -189,7 +200,9 @@ test.describe("HU-19 — Proveedores", () => {
       .getByRole("link", { name: `Ver compras a ${proveedor.nombre}`, exact: true })
       .click();
 
-    await expect(page).toHaveURL(new RegExp(`/movimientos\\?proveedorId=${proveedor.id}$`));
+    await expect(page).toHaveURL(
+      new RegExp(`/proveedores/${proveedor.id}/compras$`),
+    );
   });
 
   test("el empleado consulta los proveedores pero no los modifica", async ({
