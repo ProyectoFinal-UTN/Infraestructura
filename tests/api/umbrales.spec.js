@@ -1,13 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "../soporte/fixtures.js";
 import { crearProductoViaApi } from "../soporte/datos.js";
-import { sumarMiembro } from "../soporte/equipo.js";
-import {
-  BASE_URL,
-  PASSWORD,
-  correoDePrueba,
-  leerCorrida,
-} from "../soporte/entorno.js";
+import { crearOtroComercio, sumarMiembro } from "../soporte/equipo.js";
+import { BASE_URL } from "../soporte/entorno.js";
 
 /**
  * HU-16 — Umbral de reposicion: el contrato de `GET/PUT
@@ -312,34 +307,21 @@ test.describe("HU-16 — Umbral de reposición (API)", () => {
   }) => {
     const producto = await crearProductoViaApi(api, { umbralMinimo: "5" });
 
-    // Mismo alta que en `modo-degradado.spec.js`: el sufijo de la corrida va
-    // en el correo para que `global-teardown` lo borre con el resto.
-    const { sufijo } = leerCorrida();
-    const etiqueta = `tenant-${Math.random().toString(16).slice(2, 8)}`;
-    const otro = await contextoSinSesion(playwright);
+    const otro = await crearOtroComercio(playwright);
 
     try {
-      const alta = await otro.post("/api/auth/sign-up/email", {
-        data: {
-          name: `Comercio E2E ${etiqueta}`,
-          email: correoDePrueba(etiqueta, sufijo),
-          password: PASSWORD,
-        },
-      });
-      expect(alta.status(), await alta.text()).toBe(200);
-
       // 404 y no 403: un 403 confirmaria que ese id existe en otro comercio.
-      const lectura = await leerUmbral(otro, producto.id);
+      const lectura = await leerUmbral(otro.api, producto.id);
       expect(lectura.status()).toBe(404);
       expect(await lectura.json()).toEqual({ error: MENSAJE_NO_EXISTE });
 
-      const escritura = await ponerUmbral(otro, producto.id, {
+      const escritura = await ponerUmbral(otro.api, producto.id, {
         umbralMinimo: 99,
       });
       expect(escritura.status()).toBe(404);
       expect(await escritura.json()).toEqual({ error: MENSAJE_NO_EXISTE });
     } finally {
-      await otro.dispose();
+      await otro.api.dispose();
     }
 
     // Lo que importa del aislamiento: el producto del dueno quedo intacto.
