@@ -2,13 +2,16 @@ import { expect } from "@playwright/test";
 import { BASE_URL, PASSWORD, correoDePrueba, leerCorrida } from "./entorno.js";
 
 /**
- * Andamiaje para tener una SEGUNDA persona dentro del mismo comercio (HU-4).
+ * Andamiaje para tener mas de una sesion en juego.
  *
- * Es lo unico que le faltaba al repo para poder probar los roles de punta a
- * punta. El fixture `comercio` crea un propietario por test, y con un solo
- * usuario no hay forma de verificar lo que HU-4 promete: que un empleado ve
- * menos que el dueno. Dos comercios distintos tampoco sirven — ahi lo que se
- * prueba es el aislamiento entre tenants, que es otra cosa.
+ * Son dos escenarios distintos, y conviene no confundirlos:
+ *
+ * - `sumarMiembro`: una SEGUNDA persona dentro del MISMO comercio (HU-4). El
+ *   fixture `comercio` crea un propietario por test, y con un solo usuario no
+ *   hay forma de verificar lo que HU-4 promete: que un empleado ve menos que el
+ *   dueno.
+ * - `crearOtroComercio`: un comercio APARTE, para el aislamiento entre tenants.
+ *   Ahi lo que se prueba es que ninguno ve los datos del otro, que es otra cosa.
  *
  * Va por API y no por la UI a proposito, igual que el fixture `comercio`: armar
  * el escenario no es el sujeto de la prueba. Lo que si pasa por la UI es lo que
@@ -106,6 +109,49 @@ export async function abrirComo(browser, storageState) {
   const page = await context.newPage();
 
   return { context, page };
+}
+
+/**
+ * Da de alta un comercio APARTE del test, para probar el aislamiento.
+ *
+ * Es lo contrario de `sumarMiembro`: ahi hacen falta dos personas adentro del
+ * mismo comercio (los roles de HU-4); aca hacen falta dos comercios distintos,
+ * que es lo que se necesita para verificar que ninguno ve los datos del otro.
+ *
+ * Estaba copiado y pegado en `tests/api/umbrales.spec.js` y en
+ * `tests/api/modo-degradado.spec.js`, y HU-21 lo necesitaba por tercera vez
+ * —ahora tambien desde un spec de navegador—, asi que vive aca.
+ *
+ * Devuelve el contexto de request ya autenticado (`api`) y tambien su
+ * `storageState`, para poder abrir un navegador con esa sesion via `abrirComo`.
+ * El contexto lo cierra quien lo pide: `await otro.api.dispose()` en un
+ * `finally`.
+ */
+export async function crearOtroComercio(playwright) {
+  const { sufijo } = leerCorrida();
+
+  contadorMiembros += 1;
+  const etiqueta = `tenant-${contadorMiembros}-${Math.random().toString(16).slice(2, 8)}`;
+  const email = correoDePrueba(etiqueta, sufijo);
+
+  // `storageState` vacio y no omitido, por lo mismo que en `sumarMiembro`:
+  // `request.newContext()` hereda el del test, asi que sin esto el comercio
+  // "nuevo" saldria con la cookie del comercio del test y no probaria nada.
+  const api = await playwright.request.newContext({
+    baseURL: BASE_URL,
+    storageState: { cookies: [], origins: [] },
+  });
+
+  const alta = await api.post("/api/auth/sign-up/email", {
+    data: { name: `Comercio E2E ${etiqueta}`, email, password: PASSWORD },
+  });
+
+  expect(
+    alta.status(),
+    `No se pudo crear el otro comercio: ${await alta.text()}`,
+  ).toBe(200);
+
+  return { email, etiqueta, api, storageState: await api.storageState() };
 }
 
 /** El equipo del comercio, visto por quien tenga `member:read`. */
