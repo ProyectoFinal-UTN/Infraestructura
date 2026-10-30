@@ -85,9 +85,25 @@ export class PanelDeAlertas {
    * y el refresco de fondo NO mueve `aria-busy` a proposito, justamente para
    * que esta espera no sea intermitente. Con un timeout de 45 s no hay forma de
    * verlo, asi que los tests que necesitan datos nuevos recargan la pagina.
+   *
+   * EL TIMEOUT PROPIO, y por que no es una mitigacion disfrazada: el default de
+   * `expect` es 10 s, y la PRIMERA carga del panel despues de un puñado de
+   * escrituras no entra ahi. La consulta de alertas cruza `stock`, `ubicacion` y
+   * los proveedores de cada producto, y Neon es remota y compartida entre los
+   * tres integrantes — con dos workers escribiendo, pasarse de 10 s es normal.
+   * Se vio: una corrida dejo el panel en `aria-busy="true"` con «Buscando lo
+   * que hay que reponer…» los 10 s enteros y despues cargo bien.
+   *
+   * Lo que NO se hace es subir `expect.timeout` global, que aflojaria todas las
+   * aserciones de todas las suites para arreglar una espera. Aca se afloja solo
+   * la espera por la carga; cada asercion sobre el contenido sigue con los 10 s.
+   * Y sigue reportando: si el panel no carga nunca, el test cae igual, solo que
+   * mas tarde.
    */
   async esperarCarga() {
-    await expect(this.contenedor).toHaveAttribute("aria-busy", "false");
+    await expect(this.contenedor).toHaveAttribute("aria-busy", "false", {
+      timeout: 25_000,
+    });
   }
 
   /** La fila de un producto, por su `data-producto-id`. */

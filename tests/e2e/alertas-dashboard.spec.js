@@ -349,19 +349,35 @@ test.describe("HU-17 — Alertas de reposición en el dashboard", () => {
     page,
     api,
   }) => {
-    // Stock 0 y umbral 0. Numericamente `0 <= 0` es verdadero, pero
-    // `umbralMinimo = 0` significa «sin umbral» y no tiene que alertar nunca.
-    // Por eso el vacio se prueba con ESTE producto y no con un comercio pelado:
-    // asi el test custodia la regla en vez de constatar que la nada esta vacia.
+    // Umbral 0 —que significa «sin umbral»— y stock de sobra, para poder
+    // vaciarlo despues por el flujo real.
+    //
+    // Sin proveedor a proposito, y no por descuido: este test no afirma nada
+    // sobre proveedores, y el alta mas la asociacion son dos viajes mas a Neon
+    // en el test que ya es el mas largo de la suite (hace dos cargas de pantalla
+    // y cinco llamadas antes de la primera asercion).
     const { producto } = await escenarioDeAlerta(api, {
       umbral: 0,
-      stockInicial: 0,
+      stockInicial: 20,
+      conProveedor: false,
       nombre: "Sal",
     });
+
+    // EL DISPARADOR TIENE QUE CORRER, y es lo que hace que este test pruebe la
+    // regla en vez de constatar que la nada esta vacia. `GET /api/alertas` lee
+    // filas de la tabla `alerta`; no calcula nada al vuelo. Una alerta existe
+    // solo si un disparador la creo, asi que un producto dado de alta ya por
+    // debajo de su umbral NO alerta hasta que algo lo evalue. Sin esta venta el
+    // panel estaria vacio por no haberse evaluado nunca, y la asercion de abajo
+    // pasaria con CUALQUIER umbral — lo verifico una prueba de mutacion, que
+    // con el umbral en 1 seguia pasando.
+    await venderViaApi(api, { productoId: producto.id, cantidad: 20 });
 
     const panel = new PanelDeAlertas(page);
     await panel.ir();
 
+    // Stock 0 contra umbral 0: `0 <= 0` es verdadero y aun asi no alerta,
+    // porque 0 es «sin umbral». Esa es la regla que este test custodia.
     await expect(panel.vacio).toBeVisible();
     // El hermano que se le parece y significa lo contrario.
     await expect(panel.paginaVacia).toHaveCount(0);
@@ -372,13 +388,13 @@ test.describe("HU-17 — Alertas de reposición en el dashboard", () => {
 
     const { paginacion } = await leerAlertasViaApi(api);
     expect(paginacion.total).toBe(0);
-    // Sin compras en el periodo `totalPaginas` es 0 y la navegacion no existe.
+    // Sin alertas activas la navegacion no se dibuja.
     await expect(panel.paginacion).toHaveCount(0);
 
-    // LA CONTRAPRUEBA, que es lo que hace que lo de arriba pruebe la regla del 0
-    // y no simplemente «el panel sabe estar vacio»: con el MISMO stock de 0 y el
-    // umbral en 1, la alerta aparece. El segundo disparador de la HU, sin mover
-    // una sola unidad.
+    // LA CONTRAPRUEBA: con el MISMO stock de 0 y el umbral en 1, la alerta
+    // aparece. Descarta que el vacio de arriba venga de algo ajeno al umbral
+    // —un producto que no es alertable, un panel que no lista— y ejercita el
+    // segundo disparador de la HU sin mover una sola unidad.
     await fijarUmbralViaApi(api, producto.id, 1);
 
     await page.reload();
