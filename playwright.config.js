@@ -56,6 +56,25 @@ export default defineConfig({
     screenshot: "only-on-failure",
     video: "off",
     locale: "es-AR",
+    // Fijada, y no heredada del reloj de la maquina, porque hay filtros por dia
+    // que SE RESUELVEN EN EL NAVEGADOR. Un `<input type="date">` entrega
+    // "AAAA-MM-DD" y el Frontend lo convierte al primer/ultimo instante de ese
+    // dia en hora local (`inicioDelDia`/`finDelDia` en
+    // Frontend/src/services/movimientos.js) antes de mandarlo; el backend solo
+    // compara contra el instante que recibe. O sea que la zona que decide que
+    // cae adentro del filtro es la del browser, no la del contenedor ni la de
+    // Node: una compra de las 22 h en Argentina ya es del dia siguiente en UTC,
+    // y el historial de HU-21 la dejaria afuera por un dia.
+    //
+    // Hasta ahora la suite pasaba por casualidad, porque la maquina de
+    // desarrollo ya esta en esta zona. Dicho aca, deja de depender de eso.
+    //
+    // OJO: esto fija la zona del NAVEGADOR. El proceso de Node que corre los
+    // tests sigue en la del sistema, asi que un dia calculado con `new Date()`
+    // en el spec puede no ser el que ve la pantalla. Cuando un test necesita
+    // "que dia es esto para el navegador", lo pregunta con `page.evaluate`
+    // (ver `diaDe` en tests/e2e/soporte/historialCompras.js).
+    timezoneId: "America/Argentina/Buenos_Aires",
   },
 
   projects: [

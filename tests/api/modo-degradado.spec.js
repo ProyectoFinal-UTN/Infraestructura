@@ -1,11 +1,6 @@
 import { expect, test } from "../soporte/fixtures.js";
 import { crearProductoViaApi } from "../soporte/datos.js";
-import {
-  BASE_URL,
-  PASSWORD,
-  correoDePrueba,
-  leerCorrida,
-} from "../soporte/entorno.js";
+import { crearOtroComercio } from "../soporte/equipo.js";
 
 /**
  * Contrato del modo degradado (HU-28) contra el stack real, sin navegador.
@@ -49,29 +44,10 @@ test.describe("Modo degradado — POST /api/asistente/consultas", () => {
       stockActual: "0",
     });
 
-    // El sufijo de la corrida va en el correo para que `global-teardown` lo
-    // borre junto con el resto, igual que los comercios del fixture.
-    const { sufijo } = leerCorrida();
-    const etiqueta = `tenant-${Math.random().toString(16).slice(2, 8)}`;
-
-    // `storageState` vacío: sin esto el contexto hereda la sesión del comercio
-    // del test (ver la nota en `soporte/equipo.js`).
-    const otro = await playwright.request.newContext({
-      baseURL: BASE_URL,
-      storageState: { cookies: [], origins: [] },
-    });
+    const otro = await crearOtroComercio(playwright);
 
     try {
-      const alta = await otro.post("/api/auth/sign-up/email", {
-        data: {
-          name: `Comercio E2E ${etiqueta}`,
-          email: correoDePrueba(etiqueta, sufijo),
-          password: PASSWORD,
-        },
-      });
-      expect(alta.status()).toBe(200);
-
-      const respuesta = await otro.post(RUTA, {
+      const respuesta = await otro.api.post(RUTA, {
         data: { pregunta: "¿Qué tengo que reponer?" },
       });
       const cuerpo = await respuesta.json();
@@ -81,7 +57,7 @@ test.describe("Modo degradado — POST /api/asistente/consultas", () => {
         "No tenés productos por debajo del stock mínimo.",
       );
     } finally {
-      await otro.dispose();
+      await otro.api.dispose();
     }
   });
 });
