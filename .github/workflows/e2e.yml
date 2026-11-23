@@ -1,0 +1,136 @@
+# E2E de los tres repos contra el stack completo (T-17).
+#
+# Es el paso que el flujo del equipo exige antes de promover dev a main
+# (references/git-workflow.md): la suite corre sobre el estado combinado de los
+# tres repos, levantado con Docker Compose igual que en local.
+#
+# Cuando corre:
+#   - en cada PR de Infraestructura hacia dev o main. El de dev -> main es el de
+#     la promocion, y ahi el check es el que habilita el merge;
+#   - en cada push a dev;
+#   - todas las noches sobre dev, para enterarse al otro dia si un merge en
+#     Backend o Frontend rompio algo, sin esperar a la promocion;
+#   - a mano, desde la pestaña Actions ("Run workflow").
+#
+# Backend y Frontend se toman siempre de su dev: es lo que se esta por promover
+# y contra lo que se escriben los specs.
+#
+# Base: un Postgres descartable del propio stack (docker-compose.ci.yml), nunca
+# Neon. LLM: el docker-compose.yml ya deja las keys vacias, asi que el
+# asistente responde en modo limitado y no se gasta credito.
+name: E2E
+
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev]
+  schedule:
+    # 06:00 UTC = 03:00 en Argentina.
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: Suite completa contra el stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    env:
+      # La misma base que el backend del stack, vista desde afuera de Docker
+      # (puerto publicado en docker-compose.ci.yml). La usan las migraciones y,
+      # via ../Backend/.env, los fixtures y el teardown de Playwright.
+      DATABASE_URL: postgres://postgres:e2e@localhost:54329/e2e?sslmode=require&uselibpqcompat=true
+      E2E_RAMA_ESPERADA: dev
+      COMPOSE: docker compose -f docker-compose.yml -f docker-compose.ci.yml
+
+    steps:
+      # Los tres repos como carpetas hermanas: es el layout que esperan
+      # docker-compose.yml (`context: ../Backend`) y el global-setup.
+      - name: Checkout de Infraestructura
+        uses: actions/checkout@v4
+        with:
+          path: Infraestructura
+
+      - name: Checkout de Backend (dev)
+        uses: actions/checkout@v4
+        with:
+          repository: ProyectoFinal-UTN/Backend
+          ref: dev
+          path: Backend
+
+      - name: Checkout de Frontend (dev)
+        uses: actions/checkout@v4
+        with:
+          repository: ProyectoFinal-UTN/Frontend
+          ref: dev
+          path: Frontend
+
+      # docker-compose.yml lee ../Backend/.env, y los fixtures de Playwright
+      # tambien. En CI no existe, asi que se arma con valores de prueba: nada de
+      # esto es un secreto (base descartable, sin Resend, sin LLM).
+      - name: Armar Backend/.env de prueba
+        run: |
+          cat > Backend/.env <<EOF
+          DATABASE_URL=${DATABASE_URL}
+          BETTER_AUTH_SECRET=secreto-de-ci-solo-para-firmar-sesiones-de-prueba
+          RESEND_API_KEY=
+          LLM_API_KEY=
+          AI_GATEWAY_API_KEY=
+          EOF
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            Backend/package-lock.json
+            Infraestructura/package-lock.json
+
+      - name: Levantar la base
+        working-directory: Infraestructura
+        run: $COMPOSE up -d --wait postgres
+
+      - name: Migraciones
+        working-directory: Backend
+        run: |
+          npm ci
+          npx drizzle-kit migrate
+
+      - name: Levantar el stack
+        working-directory: Infraestructura
+        run: $COMPOSE up -d --build --wait
+
+      - name: Instalar Playwright
+        working-directory: Infraestructura
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: E2E
+        working-directory: Infraestructura
+        run: npx playwright test
+
+      # Con el reporte se ve que fallo y por que (trace y screenshot), sin
+      # tener que reproducirlo en local.
+      - name: Subir el reporte si algo fallo
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reporte-playwright
+          path: |
+            Infraestructura/playwright-report/
+            Infraestructura/test-results/
+          retention-days: 14
+
+      - name: Logs del stack si algo fallo
+        if: failure()
+        working-directory: Infraestructura
+        run: $COMPOSE logs --no-color --tail 300
