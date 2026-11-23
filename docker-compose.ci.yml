@@ -1,0 +1,46 @@
+# Override para correr los E2E contra una base descartable en vez de Neon.
+#
+# Lo usa el CI (.github/workflows/e2e.yml) y sirve igual en local:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d --build
+#
+# Agrega un Postgres propio del stack y apunta el backend a el. Cada corrida
+# arranca de una base vacia (hay que aplicar las migraciones, ver README), no
+# deja datos de prueba en la base compartida y permite probar una migracion
+# antes de aplicarla en Neon.
+#
+# El puerto 54329 del host es para lo que corre afuera de Docker: las
+# migraciones y el runner de Playwright (fixtures y teardown leen DATABASE_URL
+# de ../Backend/.env). No es el 5432 para no chocar con un Postgres instalado.
+services:
+  postgres:
+    image: postgres:17
+    # Con SSL, como Neon. El certificado "snakeoil" ya viene en la imagen.
+    command:
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem
+      - -c
+      - ssl_key_file=/etc/ssl/private/ssl-cert-snakeoil.key
+    environment:
+      POSTGRES_PASSWORD: e2e
+      POSTGRES_DB: e2e
+    ports:
+      - "54329:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "e2e"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  backend:
+    environment:
+      # `environment` pisa el DATABASE_URL de env_file (../Backend/.env). Adentro
+      # de la red de Docker la base es `postgres`, no localhost.
+      # `uselibpqcompat`: `require` cifra sin verificar el certificado, que es
+      # autofirmado.
+      DATABASE_URL: postgres://postgres:e2e@postgres:5432/e2e?sslmode=require&uselibpqcompat=true
+    depends_on:
+      postgres:
+        condition: service_healthy
