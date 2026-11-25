@@ -164,6 +164,39 @@ Push y service workers solo funcionan en un "contexto seguro": HTTPS con un cert
 5. Iniciar sesión, ir a Configuración → Notificaciones, activar el interruptor y aceptar el permiso.
 6. Registrar una venta que haga cruzar el umbral a un producto. Llega el aviso; al tocarlo se abre `/productos/<id>` (Nginx devuelve `index.html` para las rutas del Frontend, así que entrar directo a esa URL funciona).
 
+## Reportes en PDF (HU-25)
+
+El propietario y el gerente pueden exportar los movimientos del comercio en PDF, por período, por producto o por proveedor (`GET /api/reportes/movimientos`, permiso `reporte: ["generar"]`). El empleado no: no ve el acceso y el backend le responde 403.
+
+Este repo **no necesita nada especial** para el reporte: sin variables nuevas, sin fuentes y sin binarios nativos (`pdfkit` es JavaScript puro, así que el `npm install` del Dockerfile del Backend alcanza). Nginx tampoco tiene una regla propia: `/api/reportes/...` entra por la `location /api/` de siempre, que no saca ni pisa ningún header. Los cuatro que importan llegan intactos y `tests/api/reportes-pdf.spec.js` lo verifica en cada corrida:
+
+| Header | Para qué |
+|---|---|
+| `Content-Type: application/pdf` | Que sea un PDF |
+| `Content-Disposition: attachment; filename="..."` | El nombre del archivo descargado |
+| `Cache-Control: no-store` | Son datos del comercio: que no queden en ningún caché |
+| `Access-Control-Expose-Headers: Content-Disposition` | Sin él, un Frontend en otro origen no puede leer el nombre y el PDF baja como `reporte-movimientos.pdf` |
+
+### Probarlo a mano
+
+1. `docker compose up --build` y entrar a `http://localhost` como propietario o gerente.
+2. Menú lateral → **Reportes** (en el celular: barra de abajo → **Más** → **Reportes**).
+3. Elegir el tipo, las fechas (por defecto, del 1° del mes a hoy) y, si corresponde, el producto o el proveedor, y tocar **Generar y descargar**.
+
+El archivo baja como `reporte-movimientos-<tipo>[-<producto o proveedor>]-<desde>_<hasta>.pdf` y trae el nombre del comercio, la fecha de generación, el tipo, el rango, la tabla filtrada y los totales. Un rango sin movimientos **no es un error**: baja igual un PDF que lo dice. Por ahora `/reportes` es una página provisoria con solo esta tarjeta, hasta que lleguen los KPIs de HU-22/23.
+
+### Producción (Render + Vercel)
+
+El Frontend (Vercel) y el Backend (Render) están en orígenes distintos, así que ahí sí importa que el Backend siga mandando `Access-Control-Expose-Headers: Content-Disposition`. Lo pone el propio Express (`exposedHeaders` en `Backend/src/app.js`), sin config de plataforma. Ninguno de los tres repos tiene `vercel.json` ni `render.yaml`, así que no hay nada que lo saque; si algún día se agregan headers desde la plataforma, revisar que no lo pisen.
+
+### Correr sus E2E
+
+```bash
+npm run test:e2e -- reportes-pdf       # los dos specs de HU-25 (api y e2e)
+```
+
+Mientras Backend y Frontend estén en su rama, con `E2E_RAMA_ESPERADA=feature/HU25-reportes-pdf` (ver [Escribir los E2E de una HU que todavía no está en `dev`](#escribir-los-e2e-de-una-hu-que-todavía-no-está-en-dev)). Los specs leen el PDF descargado con `pdf-parse`, el mismo parser que usan los tests del Backend (dependencia de desarrollo de este repo; se instala con el `npm install` de siempre).
+
 ## Estructura
 
 ```
@@ -246,7 +279,7 @@ Antes de correr nada, `tests/global-setup.js` verifica dos cosas y aborta con un
 
 #### Escribir los E2E de una HU que todavía no está en `dev`
 
-Es lo normal, no la excepción: los E2E de una HU se escriben mientras Backend y Frontend están en sus feature branches, y el PR de infraestructura se mergea **después** de que las dos entren a `dev`. Así se hizo con HU-16, HU-18, HU-19, HU-20, HU-21 y HU-17.
+Es lo normal, no la excepción: los E2E de una HU se escriben mientras Backend y Frontend están en sus feature branches, y el PR de infraestructura se mergea **después** de que las dos entren a `dev`. Así se hizo con HU-16, HU-18, HU-19, HU-20, HU-21, HU-17 y HU-25.
 
 Para eso están los repos hermanos en la rama de la HU y `E2E_RAMA_ESPERADA` apuntada ahí:
 
@@ -395,6 +428,9 @@ En el test del empleado hay un detalle que no se ve a simple vista: el formulari
   Tres detalles que muerden. El panel **no espera por la desaparición del cartel de carga** sino por `aria-busy="false"` del contenedor: el cartel solo existe en la primera carga. Los números van por `aria-label` y no por el texto visible, que sale pegado — y el del stock **no** es «3 unidad» sino «Te quedan 3 unidad, el mínimo es 5», con los dos lados de la comparación. Y el refresco automático **no se espera**: la cadencia es de 60 s contra un timeout de 45 s, y el refresco de fondo no mueve `aria-busy` a propósito, así que los tests que necesitan datos nuevos recargan. Que el panel se actualice solo lo cubren los unitarios del Frontend.
 
 - `tests/api/alertas.spec.js` — HU-17, lo que no se puede provocar desde el navegador. La página **no vive en la URL**: es un `useState` del panel (es deliberado, para no ensuciar la URL del dashboard) y `pagina-siguiente` está `disabled` en la última, así que ni escribiendo la URL a mano se pide una página de más. Igual importa, porque `alertas-pagina-vacia` es un estado distinto del vacío de verdad: un 200 con la lista vacía y `total > 0`. Si el backend contestara 404, o `total: 0`, la pantalla diría «no tenés nada que reponer» cuando sí hay. También el límite por encima del máximo, que se recorta en silencio (se afirma el límite **efectivo**, leído de `paginacion.limite`, nunca el pedido), y el 401 sin sesión con su mensaje exacto: el Frontend compara `No hay sesion activa` tal cual para distinguir sesión vencida de falta de permiso, así que una tilde de más rompería un aviso lejos de acá.
+
+- `tests/e2e/reportes-pdf.spec.js` — HU-25 (SCRUM-37 / SCRUM-151): el reporte de movimientos en PDF recorrido por la pantalla. El gerente llega desde el menú y descarga los tres tipos —por período, por producto y por proveedor—; en cada uno se verifica el nombre sugerido del archivo (el del `Content-Disposition` del backend, no el de respaldo), el aviso «Reporte descargado», la query que salió, y **se abre el PDF descargado**: trae el nombre del comercio de la sesión, la fecha de generación, el tipo, el rango aplicado y solo los movimientos que el filtro deja pasar (el producto y el proveedor que no corresponden no aparecen ni por nombre). Un rango sin movimientos descarga igual un PDF que lo dice; «Desde» posterior a «Hasta» avisa al lado del campo **sin pedir nada al backend** (se cuentan los GET); el empleado no ve el acceso y por URL ve el cartel de sin permiso; y en un celular de 375 px se llega desde «Más» y la página no tiene scroll horizontal.
+- `tests/api/reportes-pdf.spec.js` — HU-25, lo que supertest no ve porque le pega a Express directo: que `Content-Type`, `Content-Disposition`, `Cache-Control` y `Access-Control-Expose-Headers` lleguen intactos **a través de Nginx** para los tres tipos, con el nombre de archivo esperado y un cuerpo que es un PDF completo (`%PDF-` … `%%EOF`) y abre con un parser real; 403 para el empleado con el 200 del propietario como contraste; 401 sin sesión; 400 con el rango invertido (JSON, no PDF); y 404 con un producto o un proveedor de otro comercio, con la contraprueba de que su dueño sí los reporta. Los 400 uno por uno y el tope de 5000 filas los cubre `Backend/tests/reportes.test.js`.
 
 ## Flujo de trabajo con Git
 
