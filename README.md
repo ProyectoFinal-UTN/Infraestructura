@@ -310,6 +310,32 @@ Variables de entorno opcionales:
 
 Los workers están fijados en 2: el cuello de botella no es la CPU sino Neon, que es remota y compartida, y por encima de eso las consultas de sesión empiezan a cortar por timeout.
 
+### Contra una base descartable en vez de Neon
+
+`docker-compose.ci.yml` suma un Postgres propio al stack (con SSL, como Neon) y apunta el backend a él. Es lo que usa el CI, y sirve en local para no dejar datos de prueba en la base compartida o para probar una migración antes de aplicarla en Neon:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d --wait postgres
+# migraciones sobre la base vacía (desde ../Backend)
+DATABASE_URL="postgres://postgres:e2e@localhost:54329/e2e?sslmode=require&uselibpqcompat=true" npx drizzle-kit migrate
+docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d --build --wait
+DATABASE_URL="postgres://postgres:e2e@localhost:54329/e2e?sslmode=require&uselibpqcompat=true" npm run test:e2e
+```
+
+El `DATABASE_URL` del último comando es para los fixtures y el teardown, que corren afuera de Docker. La base vive en el contenedor: `docker compose ... down -v` la borra entera.
+
+### Integración continua
+
+Los tres repos tienen GitHub Actions (T-17):
+
+| Repo | Workflow | Qué corre | Cuándo |
+|---|---|---|---|
+| Backend | `.github/workflows/ci.yml` | lint, migraciones sobre un Postgres descartable con SSL y la suite de Jest | cada PR y cada push a `dev` y `main` |
+| Frontend | `.github/workflows/ci.yml` | lint, Vitest y `vite build` | cada PR y cada push a `dev` y `main` |
+| Infraestructura | `.github/workflows/e2e.yml` | esta suite completa contra el stack de Docker, con `Backend` y `Frontend` en `dev` y `docker-compose.ci.yml` | cada PR a `dev` o `main` (el de `dev` → `main` es la promoción), cada push a `dev`, todas las noches y a mano desde la pestaña Actions |
+
+Ninguno usa Neon ni llama al LLM: la base es descartable y las keys quedan vacías. Si un E2E falla en CI, el reporte de Playwright (traces y screenshots) queda como artifact de la corrida durante 14 días.
+
 ### Datos de prueba
 
 Cada test registra **su propio comercio** (`test-e2e-...@test.local`), así que arranca con el catálogo vacío y no puede pisar lo que hizo otro: los tests corren sueltos, en cualquier orden y en paralelo. Al terminar la corrida, `tests/global-teardown.js` borra de la base todo lo que se creó, identificándolo por el sufijo de esa corrida —el mismo criterio que el `afterAll` de `Backend/tests/productos.test.js`— usando la `DATABASE_URL` de `../Backend/.env`.
