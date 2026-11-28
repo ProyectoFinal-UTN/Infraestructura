@@ -12,8 +12,10 @@
 #     Backend o Frontend rompio algo, sin esperar a la promocion;
 #   - a mano, desde la pestaña Actions ("Run workflow").
 #
-# Backend y Frontend se toman siempre de su dev: es lo que se esta por promover
-# y contra lo que se escriben los specs.
+# Backend y Frontend se toman de su dev: es lo que se esta por promover y contra
+# lo que se escriben los specs. La corrida manual acepta otra rama para los dos
+# (inputs `rama_backend` / `rama_frontend`), que es como se prueba una HU antes
+# de que entre a dev; los demas disparadores siguen yendo a dev sin excepcion.
 #
 # Base: un Postgres descartable del propio stack (docker-compose.ci.yml), nunca
 # Neon. LLM: el docker-compose.yml ya deja las keys vacias, asi que el
@@ -29,6 +31,30 @@ on:
     # 06:00 UTC = 03:00 en Argentina.
     - cron: "0 6 * * *"
   workflow_dispatch:
+    # Para correr la suite contra una HU que todavia NO esta en `dev` (HU-23 y
+    # las que vengan). Es lo normal, no la excepcion: los E2E de una HU se
+    # escriben mientras Backend y Frontend estan en sus feature branches, y
+    # hasta ahora eso solo se podia hacer en local con `E2E_RAMA_ESPERADA`
+    # (README, "Escribir los E2E de una HU que todavia no esta en dev").
+    #
+    # SOLO APLICAN A LA CORRIDA MANUAL. En `pull_request`, `push` y `schedule`
+    # el contexto `inputs` viene vacio y las tres caen en `dev`, o sea que esas
+    # corridas no cambian en nada.
+    #
+    # Los dos tienen que ser EL MISMO nombre de rama: `E2E_RAMA_ESPERADA` es un
+    # solo valor para los dos repos y el gate de tests/global-setup.js lo exige
+    # asi a proposito (ver el README). Van separados igual para que el checkout
+    # falle diciendo cual de los dos no existe, en vez de fallar el gate despues
+    # de diez minutos de build.
+    inputs:
+      rama_backend:
+        description: "Rama de Backend (por defecto dev)"
+        required: false
+        default: dev
+      rama_frontend:
+        description: "Rama de Frontend (tiene que ser la MISMA que la de Backend)"
+        required: false
+        default: dev
 
 concurrency:
   group: e2e-${{ github.ref }}
@@ -48,8 +74,34 @@ jobs:
       # (puerto publicado en docker-compose.ci.yml). La usan las migraciones y,
       # via ../Backend/.env, los fixtures y el teardown de Playwright.
       DATABASE_URL: postgres://postgres:e2e@localhost:54329/e2e?sslmode=require&uselibpqcompat=true
-      E2E_RAMA_ESPERADA: dev
+      # La rama que el gate le exige a Backend y Frontend. `dev` salvo en una
+      # corrida manual que apunte a una feature branch (ver los inputs arriba).
+      E2E_RAMA_ESPERADA: ${{ inputs.rama_backend || 'dev' }}
       COMPOSE: docker compose -f docker-compose.yml -f docker-compose.ci.yml
+      # LA ZONA DEL PROCESO QUE CORRE LOS SPECS (HU-23). Es la tercera zona del
+      # sistema y la unica que faltaba fijar; las otras dos son la del NAVEGADOR
+      # (`timezoneId` en playwright.config.js, que ya estaba, y es la que usa el
+      # `<input type="date">`) y la del contenedor (docker-compose.yml).
+      #
+      # Los runners de GitHub corren en UTC y nosotros cortamos los dias en
+      # Argentina. Backend y Frontend no se enteran —los dos fijan su zona en el
+      # codigo, con `timeZone` explicito, y ninguno lee `TZ`—, pero el proceso de
+      # Node que corre Playwright si: un `new Date()` pelado en un spec, a las
+      # 21 h de Argentina, da ya el dia siguiente en el runner. El off-by-one
+      # aparece SOLO en CI, que es donde mas cuesta diagnosticarlo.
+      #
+      # HOY NO CAMBIA NINGUNA CORRIDA, y se verifico antes de ponerlo: ningun
+      # spec de la suite deriva un dia del reloj del sistema. Los que calculan
+      # fechas lo hacen con la zona explicita (`diaEnArgentina` en
+      # tests/soporte/reportes.js y en tests/soporte/kpis.js) o adentro del
+      # navegador (`fechasDelNavegador` en tests/e2e/historial.spec.js,
+      # `diaDe` en tests/e2e/soporte/historialCompras.js).
+      #
+      # O sea que esto es el cinturon y no el arnes: la defensa de verdad son
+      # esos helpers. Correr con `TZ=UTC` tiene que dar exactamente el mismo
+      # resultado, y si algo se cae con eso, el hallazgo es un `new Date()`
+      # pelado que se escapo.
+      TZ: America/Argentina/Buenos_Aires
 
     steps:
       # Los tres repos como carpetas hermanas: es el layout que esperan
@@ -59,18 +111,18 @@ jobs:
         with:
           path: Infraestructura
 
-      - name: Checkout de Backend (dev)
+      - name: Checkout de Backend
         uses: actions/checkout@v4
         with:
           repository: ProyectoFinal-UTN/Backend
-          ref: dev
+          ref: ${{ inputs.rama_backend || 'dev' }}
           path: Backend
 
-      - name: Checkout de Frontend (dev)
+      - name: Checkout de Frontend
         uses: actions/checkout@v4
         with:
           repository: ProyectoFinal-UTN/Frontend
-          ref: dev
+          ref: ${{ inputs.rama_frontend || 'dev' }}
           path: Frontend
 
       # docker-compose.yml lee ../Backend/.env, y los fixtures de Playwright

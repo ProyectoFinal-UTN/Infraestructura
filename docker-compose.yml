@@ -27,6 +27,21 @@ services:
     environment:
       BETTER_AUTH_URL: http://localhost
       TRUSTED_ORIGINS: http://localhost
+      # La zona del contenedor (HU-23). DEFENSIVA, no correctiva: HOY NO CAMBIA
+      # NINGUN RESULTADO, y conviene saberlo para no confiar en ella.
+      #
+      # Donde empieza y termina un dia en los KPIs lo decide `ZONA_HORARIA` en
+      # Backend/src/services/kpis.service.js, que esta fija en el codigo y se usa
+      # con `timeZone` explicito en Node y con `at time zone` en el SQL. El
+      # backend no lee `TZ` en ningun lado, asi que sacar esta linea no rompe
+      # nada — y ponerla tampoco arregla nada por si sola.
+      #
+      # Esta para que el dia que alguien escriba un `new Date().getHours()` en el
+      # backend, el contenedor no le contesten en UTC. Las zonas que SI importan
+      # para esta HU son otras dos: `timezoneId` en playwright.config.js (la del
+      # navegador, que es la que usa el `<input type="date">`) y `TZ` en
+      # .github/workflows/e2e.yml (la del proceso que corre los specs).
+      TZ: America/Argentina/Buenos_Aires
       # Sin LLM en el stack de Docker (HU-26). El .env del Backend puede traer la
       # key del AI Gateway, que es UNA sola para los tres integrantes con US$ 5
       # por mes: si llegara hasta aca, cada corrida de los E2E le pegaria al
