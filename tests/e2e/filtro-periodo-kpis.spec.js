@@ -8,6 +8,7 @@ import {
   escenarioDeKpis,
   leerKpisViaApi,
   paramsEsperados,
+  diasEntre,
   queryDeRango,
   rangoDePeriodo,
   rangosDeBorde,
@@ -357,6 +358,66 @@ test.describe("HU-23 — Filtrado de KPIs por período", () => {
     await selector.desde.fill("");
     await expect(selector.rangoInvalido).toHaveCount(0);
     expect(pedidos.slice(antes), "con un solo extremo no se pide nada").toEqual([]);
+  });
+
+  /**
+   * El otro rango que para el CLIENTE: el que se pasa del tope de 366 dias.
+   *
+   * Va aparte del rango invertido porque son las dos ramas de `validarPeriodo` y
+   * se rompen por separado, y porque el mensaje es el unico que dice un numero
+   * calculado (cuantos dias abarca el que se eligio).
+   *
+   * LOS DOS TOPES NO SE COMPORTAN IGUAL, y es lo que mas se confunde de esta HU:
+   * `dias` se recorta en silencio con un 200, pero un rango de mas de 366 dias
+   * se RECHAZA. Y lo rechaza el cliente antes de pedir, asi que por pantalla se
+   * ve `kpis-periodo-rango-invalido` y NUNCA el 400 del backend. El 400 existe y
+   * esta cubierto, pero en tests/api/: para verlo hay que pegarle a la API
+   * directo.
+   */
+  test("un rango de más de 366 días lo para el cliente, sin pedir nada", async ({
+    page,
+    api,
+  }) => {
+    await unaVentaDeHoy(api);
+    const hoy = diaEnArgentina();
+
+    const pedidos = contarPedidos(page, "/api/kpis", "GET");
+    const panel = new PanelDeKpis(page);
+    const selector = new SelectorDePeriodo(page, panel);
+    await panel.ir();
+
+    await selector.abrir(rangoDePeriodo(hoy, hoy));
+
+    // 367 dias contando los dos extremos: uno mas que el tope.
+    const desde = sumarDias(hoy, -366);
+    expect(diasEntre(desde, hoy), "el rango de prueba abarca 367 dias").toBe(367);
+
+    const antes = pedidos.length;
+    await selector.desde.fill(desde);
+
+    await expect(selector.rangoInvalido).toBeVisible();
+    await expect(selector.rangoInvalido).toContainText(
+      "El período no puede abarcar más de 366 días y el que elegiste abarca 367.",
+    );
+    expect(
+      pedidos.slice(antes),
+      "un rango que se pasa del tope no tiene que llegar al backend",
+    ).toEqual([]);
+    // Es el aviso del cliente, no el 400 del backend.
+    await expect(selector.error).toHaveCount(0);
+
+    // Y 366 EXACTOS SI PASAN: el borde esta donde dice estar, no uno antes.
+    const justo = sumarDias(hoy, -365);
+    expect(diasEntre(justo, hoy)).toBe(366);
+    const respuesta = await selector.escribirRango(
+      { desde: justo, hasta: hoy },
+      rangoDePeriodo(justo, hoy),
+    );
+
+    expect(respuesta.status()).toBe(200);
+    expect((await respuesta.json()).periodo.dias).toBe(366);
+    await expect(selector.rangoInvalido).toHaveCount(0);
+    await expect(selector.error).toHaveCount(0);
   });
 
   /**
