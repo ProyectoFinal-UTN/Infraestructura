@@ -279,7 +279,7 @@ Antes de correr nada, `tests/global-setup.js` verifica dos cosas y aborta con un
 
 #### Escribir los E2E de una HU que todavía no está en `dev`
 
-Es lo normal, no la excepción: los E2E de una HU se escriben mientras Backend y Frontend están en sus feature branches, y el PR de infraestructura se mergea **después** de que las dos entren a `dev`. Así se hizo con HU-16, HU-18, HU-19, HU-20, HU-21, HU-17, HU-25 y HU-22.
+Es lo normal, no la excepción: los E2E de una HU se escriben mientras Backend y Frontend están en sus feature branches, y el PR de infraestructura se mergea **después** de que las dos entren a `dev`. Así se hizo con HU-16, HU-18, HU-19, HU-20, HU-21, HU-17, HU-25, HU-22 y HU-23.
 
 Para eso están los repos hermanos en la rama de la HU y `E2E_RAMA_ESPERADA` apuntada ahí:
 
@@ -300,6 +300,14 @@ Dos cosas que hay que saber, y las dos muerden:
 
 Al terminar, con las dos ramas ya en `dev`, conviene correr la suite una vez más sin la variable antes de mergear el PR de infraestructura.
 
+**Y en la CI (desde HU-23).** Lo de arriba resuelve el entorno local; el workflow hacía `checkout` de `dev` fijo, así que el check del PR se iba a rojo **por construcción** mientras la HU no estuviera mergeada. Ahora la corrida **manual** acepta la rama como input:
+
+> Actions → **E2E** → *Run workflow* → `rama_backend` y `rama_frontend` = `feature/HU23-filtro-periodo-kpis`
+
+Los dos inputs tienen que llevar **el mismo nombre de rama**, por lo mismo que `E2E_RAMA_ESPERADA`. Y solo aplican a la corrida manual: en `pull_request`, `push` y `schedule` el contexto `inputs` viene vacío y las tres siguen yendo a `dev` sin cambios.
+
+Eso da la corrida en Linux antes del merge, pero **no pone verde el check del PR**: ese sigue corriendo contra `dev`. El orden sigue siendo backend → frontend → e2e, y una vez que las dos están en `dev`, un «Re-run jobs» en el PR de infraestructura lo pone verde sin tocar una línea.
+
 Variables de entorno opcionales:
 
 | Variable | Para qué |
@@ -307,6 +315,7 @@ Variables de entorno opcionales:
 | `E2E_CHANNEL=chrome` | Usa el Chrome (o `msedge`) ya instalado en vez del Chromium de Playwright. Sirve cuando bajar esos 200 MB no es viable, con la salvedad de que se testea contra una versión del navegador que no controlamos. |
 | `E2E_RAMA_ESPERADA` | Cambia la rama que se exige en `Backend`/`Frontend`. Por defecto `dev`. |
 | `E2E_BASE_URL` | Apunta la suite a otra URL. Por defecto `http://localhost`. |
+| `TZ` | La zona del **proceso que corre los specs** (no la del navegador, que la fija `timezoneId` en `playwright.config.js`, ni la del contenedor). El workflow la pone en Argentina porque los runners corren en UTC. Los specs no deberían depender de ella —calculan los días con la zona explícita, ver `diaEnArgentina` en `tests/soporte/kpis.js`—, así que `TZ=UTC npm run test:e2e` tiene que dar el mismo resultado: si algo se cae con eso, el hallazgo es un `new Date()` pelado. |
 
 Los workers están fijados en 2: el cuello de botella no es la CPU sino Neon, que es remota y compartida, y por encima de eso las consultas de sesión empiezan a cortar por timeout.
 
@@ -332,7 +341,7 @@ Los tres repos tienen GitHub Actions (T-17):
 |---|---|---|---|
 | Backend | `.github/workflows/ci.yml` | lint, migraciones sobre un Postgres descartable con SSL y la suite de Jest | cada PR y cada push a `dev` y `main` |
 | Frontend | `.github/workflows/ci.yml` | lint, Vitest y `vite build` | cada PR y cada push a `dev` y `main` |
-| Infraestructura | `.github/workflows/e2e.yml` | esta suite completa contra el stack de Docker, con `Backend` y `Frontend` en `dev` y `docker-compose.ci.yml` | cada PR a `dev` o `main` (el de `dev` → `main` es la promoción), cada push a `dev`, todas las noches y a mano desde la pestaña Actions |
+| Infraestructura | `.github/workflows/e2e.yml` | esta suite completa contra el stack de Docker, con `Backend` y `Frontend` en `dev` y `docker-compose.ci.yml` | cada PR a `dev` o `main` (el de `dev` → `main` es la promoción), cada push a `dev`, todas las noches y a mano desde la pestaña Actions — la corrida a mano acepta otra rama para Backend y Frontend, ver [arriba](#escribir-los-e2e-de-una-hu-que-todavía-no-está-en-dev) |
 
 Ninguno usa Neon ni llama al LLM: la base es descartable y las keys quedan vacías. Si un E2E falla en CI, el reporte de Playwright (traces y screenshots) queda como artifact de la corrida durante 14 días.
 
@@ -439,6 +448,12 @@ En el test del empleado hay un detalle que no se ve a simple vista: el formulari
   Lo que **no** se prueba acá: la ventana larga contra datos viejos y los «productos sin ventas», porque el libro es append-only y por la API no se registra en el pasado (los cubre `Backend/tests/kpis.test.js` corriendo fechas en la base, junto con el rendimiento con 30.000 movimientos); y el refresco por reloj de 60 s, que no entra en el timeout (lo cubren los unitarios del Frontend con temporizadores falsos).
 
 - `tests/api/kpis.spec.js` — HU-22, el contrato de `GET /api/kpis` a través del stack: el cálculo en frío por debajo de 2 s medido en el endpoint; que dos lecturas sin cambios devuelven el mismo cálculo (mismo `generadoEn`) y una venta en el medio lo invalida; la ventana pedida, el recorte a 90 días y el 400; el 401 sin sesión; y el 403 del empleado frente al 200 del gerente.
+
+- `tests/e2e/filtro-periodo-kpis.spec.js` — HU-23 (SCRUM-35 / SCRUM-145): el filtrado de los KPIs por período, recorrido por el selector de 7 botones. Es **la primera capa que corre HU-23 contra el backend real**: el Backend la probó con supertest sin stack y el Frontend con el service mockeado. Cubre el arranque en «30 días» —cuyo primer pedido va **sin query**, porque es el default del backend—; que cada preset emita los instantes que le corresponden al día en que se lo toca, con el offset `-03:00` encodeado y los dos extremos inclusive (la semana es de lunes a domingo **de calendario**, y el domingo pertenece a la semana que *termina*); un rango válido por «Personalizado»; las fechas invertidas, que **las para el cliente** sin gastar el viaje; el período sin datos, que es un 200 con ceros y **sin un solo `role="alert"`**; los dos extremos del rango inclusive, con un cuarto rango que los **excluye** para que los otros tres signifiquen algo; el recorte silencioso de la ventana; las tres granularidades del gráfico con la suma de las barras contra la tarjeta; que el stock **no** se mueva al cambiar de período; el aislamiento por comercio con un rango explícito; el selector en ancho de celular; y el RNF2 medido sobre un **cambio** de período, que es el pedido que nunca acierta la caché.
+
+  Dos cosas que conviene saber antes de escribir un test acá. **Las fechas se prueban en dos mitades**, y no por gusto: `movimiento.fecha` es `defaultNow()` y el POST no acepta fecha, así que todo movimiento creado por el flujo real es de hoy y no hay forma de repartir un libro entre varios días. Entonces los presets de calendario se afirman **solo por los parámetros que emiten** —calculados en Node con la zona explícita en `tests/soporte/kpis.js`, nunca preguntándoselos a la página— y las afirmaciones sobre datos van por «Personalizado» con los días anclados a «hoy en Argentina». Lo fijo y literal se conserva donde sí vale: `PERIODO_SIN_DATOS` (enero de 2026), que es el período que tiene que dejar los datos **afuera**. Y **los page objects de HU-22 no se reusan para el selector**: `elegirVentana()` espera cualquier GET a `/api/kpis`, y acá eso resuelve con la respuesta equivocada —el refresco de fondo dispara pedidos que nadie pidió, y escribir un rango de dos campos dispara uno **intermedio** por el extremo que ya estaba—. `SelectorDePeriodo` espera por los parámetros.
+
+- `tests/api/kpis.spec.js` — HU-23 además, el contrato del período, que **por la UI es inalcanzable**: el cliente para el rango invertido y el que se pasa del tope antes de pedir, y `parametrosDePeriodo` nunca manda las dos formas juntas. Verifica los **dos topes, que se comportan distinto** —`dias` se recorta en silencio a 90 con un 200; un rango se **rechaza** con 400 arriba de 366 días, y 366 exactos pasan—; que las dos formas sean excluyentes; que un solo extremo sea 400 y no «desde siempre hasta marzo»; que la zona tenga que ser explícita (`Z` vale, un ISO sin offset no); que el **403 se evalúe antes que el rango**, con el 400 del propietario por la misma ruta como contraste; que `comercioId` no exista y se descarte; y los invariantes que sostienen el gráfico (`porDia` trae exactamente `periodo.dias` elementos, del más viejo al más nuevo).
 
 ## Flujo de trabajo con Git
 
